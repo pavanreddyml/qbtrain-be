@@ -1,0 +1,24 @@
+
+
+services:
+  redis:
+    image: "redis:alpine"
+    container_name: "redis"
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+
+
+  postgres:
+    image: "postgres:13-alpine"
+    container_name: "postgres"
+    environment:
+      POSTGRES_USER: "db_superuser"
+      POSTGRES_PASSWORD: "db_superuser"
+      POSTGRES_DB: "aisecserver_db"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data

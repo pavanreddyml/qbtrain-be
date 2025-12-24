@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qbtrain"
+version = "0.1.2"
+description = "Tools for training and serving models (replace with a short description)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Pavan Reddy" }
+]
+dependencies = [
+    "Django>=4.2",
+    "django-cors-headers",
+    "djangorestframework",
+    "drf-spectacular",
+    "gunicorn",
+    "boto3",
+    "ollama",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Operating System :: OS Independent"
+]
+keywords = ["training", "ml", "qbtrain"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["qbtrain*"]

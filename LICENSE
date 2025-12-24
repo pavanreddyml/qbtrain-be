@@ -1,0 +1,169 @@
+Custom Source-Available License (No-SaaS / Non-Commercial, Educational-Friendly)
+
+Version 1.1 — 2025-12-10
+
+Copyright (c) [YEAR] [YOUR NAME / ORG]
+All rights reserved.
+
+IMPORTANT: BY ACCESSING, DOWNLOADING, INSTALLING, COPYING, OR USING THIS SOFTWARE, YOU AGREE TO BE BOUND BY THE TERMS OF THIS LICENSE. IF YOU DO NOT AGREE, DO NOT USE THE SOFTWARE.
+
+This is a source-available, but not “open source” as defined by the OSI, license.
+
+1. DEFINITIONS
+   1.1. “Software” means the [PROJECT NAME] source code, object code, associated files, and any accompanying documentation made available in this repository.
+   1.2. “You” (or “Your”) means any individual or legal entity exercising permissions granted by this License.
+   1.3. “Personal Use” means use by a natural person for hobby, experimentation, learning, research, personal projects, or personal productivity, where the Software is not provided to third parties as a paid service and is not the primary driver of commercial revenue.
+   1.4. “Educational Use” means use by:
+        (a) an educational institution (including public, private, and non-profit schools, colleges, universities, bootcamps, and similar); or
+        (b) an educator, teacher, instructor, trainer, or student;
+        for teaching, coursework, research, demonstrations, or similar instructional purposes.
+   1.5. “Commercial Use” means any use intended for or resulting in direct or indirect commercial advantage or monetary compensation, except as explicitly allowed under Sections 3.3 and 3.4.
+   1.6. “Hosting Service” means providing access to the functionality of the Software to any third party over a network (including the internet) as a service or platform, including but not limited to “Software as a Service” (SaaS), “Platform as a Service” (PaaS), or similar hosted or managed offerings.
+   1.7. “At Scale” means delivering the Software or a Hosting Service based on the Software to parties outside your own organization or classroom in a generalized, repeatable, or automated manner (for example, via a public website, multi-tenant service, or broad distribution to external customers or users).
+   1.8. “Public Deployment” means any deployment of the Software that is accessible by individuals outside your own organization or classroom over a network, whether authenticated or unauthenticated.
+
+2. GRANT OF RIGHTS
+   Subject to your continued compliance with this License, the Licensor grants you a non-exclusive, worldwide, non-transferable, royalty-free license to:
+
+   2.1. Use
+        - Use, run, and execute the Software for:
+          (a) Personal Use; and
+          (b) Educational Use.
+
+   2.2. Modify
+        - Modify, adapt, and create derivative works of the Software for Personal Use and Educational Use.
+
+   2.3. Distribute (Limited)
+        - Distribute unmodified or modified copies of the Software:
+          (a) to students, faculty, and staff of an educational institution for Educational Use; or
+          (b) to individuals for their Personal Use;
+        provided that:
+          - you include this License and the above copyright notice in all copies; and
+          - you do not charge a fee for the Software itself (excluding cost-recovery for physical media or incidental expenses).
+
+   2.4. Authentication Modifications (OAuth Bypass)
+        - Any individual, institution, or organization MAY modify the source code solely to change, replace, or bypass OAuth or similar authentication mechanisms for their own deployment of the Software, provided that:
+          - such modifications do not remove or obscure the required attributions described in Section 7; and
+          - such deployment still complies with all other terms of this License, including the restrictions in Section 4.
+
+3. SPECIFIC ALLOWED USES (CLARIFICATIONS)
+   3.1. Talks, Presentations, and Workshops
+        You MAY use the Software (including in its entirety) during talks, workshops, tutorials, courses, or similar events and MAY charge for attendance, teaching, or consulting fees. The restriction is that you may not sell access to the Software itself as a hosted or packaged service, except as allowed in Section 2 for Educational Use.
+
+   3.2. Internal Use by Organizations
+        Organizations MAY use the Software internally for evaluation, experimentation, learning, prototypes, and internal tooling, provided it is not:
+        - exposed externally as a Hosting Service; or
+        - the primary basis of a paid product or service offered to third parties.
+
+   3.3. Educational Institutions and Educators
+        Educational institutions, educators, teachers, instructors, and students MAY:
+        - install, use, and modify the Software for Educational Use;
+        - distribute copies to students, faculty, and staff for Educational Use;
+        - use it in classrooms, labs, assignments, research, and course materials;
+        in each case without payment to the Licensor, provided they comply with Section 4 (Prohibited Uses).
+
+   3.4. Paid Teaching and Training
+        Educators, trainers, and consultants MAY receive payment for their teaching, training, or consulting services while using or demonstrating the Software, as long as they do not provide the Software as a Hosting Service and do not sell the Software itself as a product.
+
+   3.5. Citation and Academic Use
+        For any academic, educational, or research use (including but not limited to papers, theses, presentations, course materials, and demos), you are strongly encouraged to cite the Software using the citation format provided in this repository (e.g., CITATION.cff or equivalent). Where customary in your field, you SHOULD include such a citation.
+
+4. PROHIBITED USES
+   The following uses are expressly PROHIBITED unless you obtain a separate commercial license from the Licensor:
+
+   4.1. SaaS / PaaS / Hosting Service
+        You may NOT:
+        - offer the Software, or any modified version of it, as a Hosting Service, SaaS, PaaS, API, managed service, or similar, whether paid or free, where third parties can use the Software’s functionality over a network;
+        - operate a service where the primary value to customers or users is the functionality provided by the Software.
+
+   4.2. Selling the Software as a Service or Product
+        You may NOT:
+        - sell, license, lease, rent, or otherwise commercially exploit the Software or substantial portions of it as a standalone product or as the core of a commercial offering;
+        - create a commercial product or service whose main purpose is to provide the Software, or a derivative of it, to others.
+
+   4.3. Commercial Distribution “At Scale”
+        You may NOT distribute the Software, or derivatives, “At Scale” in a commercial context, including but not limited to:
+        - bundling the Software into a commercial product or toolkit whose main value is access to the Software;
+        - mass distribution to customers, clients, or users outside your organization in exchange for payment or as part of a paid offering.
+
+   4.4. Circumvention
+        You may NOT take any action with the intent to circumvent the spirit or letter of the Hosting Service and Commercial Use restrictions, including by:
+        - interposing thin layers that add trivial functionality around the Software and selling access to that;
+        - proxying or wrapping the Software in a generic “platform” that exists primarily to deliver this Software’s functionality.
+
+5. CONTRIBUTIONS
+   5.1. Contributions by others to this repository are optional and not required.
+   5.2. If you submit a contribution (e.g., via pull request, patch, or similar), you:
+        - grant the Licensor a perpetual, irrevocable, worldwide, royalty-free license to use, modify, distribute, relicense, and create derivative works of your contribution as part of the Software under this License or any future license version; and
+        - represent that you have the necessary rights to grant this license.
+   5.3. The Licensor is not obligated to accept or incorporate any contributions.
+
+6. LICENSE CHANGES AND VERSIONING
+   6.1. The Licensor may publish new versions of this License at any time.
+   6.2. Such changes are NOT retroactive:
+        - Any copy of the Software you have already obtained remains licensed under the License version in effect at the time you obtained that copy.
+        - Future releases, updates, or new versions of the Software may be offered under a new or different license at the Licensor’s sole discretion.
+   6.3. By using a later release, update, or version of the Software, you agree to the license terms that accompany that release, update, or version.
+
+7. ATTRIBUTION, LOGO, AND NAMING
+   7.1. Required Notices
+        For any Public Deployment or any user-facing deployment of the Software (including modified versions), you MUST:
+        - display the Software’s name as specified by the Licensor in the repository;
+        - display the phrase: “Platform authored by Pavan Reddy” (or the then-current attribution phrase specified by the Licensor in the repository);
+        - retain and display any official logo(s) or visual marks of the Software provided in the repository, in a reasonably prominent location (such as a footer, header, or “About” section) within the user interface of the deployed application.
+
+   7.2. Prohibition on Removal or Obscuring
+        You may NOT:
+        - remove, hide, or obscure the Software name;
+        - remove, hide, or obscure the phrase “Platform authored by Pavan Reddy”; or
+        - remove, hide, or obscure the official logo(s) or visual marks provided with the Software;
+        in any Public Deployment or user-facing deployment, except with the Licensor’s prior written permission.
+
+   7.3. Modifications to UI
+        You may modify the user interface for your own deployment, but such modifications must preserve the required attributions and logo(s) in a clear and reasonably visible manner.
+
+   7.4. No Endorsement
+        You may state factually that your project “uses [PROJECT NAME]” or “is based on [PROJECT NAME]” but may not imply endorsement or sponsorship by the Licensor.
+
+8. DATA COLLECTION AND PRIVACY NOTICE
+   8.1. Default Behavior
+        The reference implementation of the Software may collect user information, including but not limited to email address, name, and other data provided by OAuth or similar authentication providers, when used in a Public Deployment. Such data collection is intended for analytics, usage metrics, and operational purposes.
+
+   8.2. Email and Promotions
+        The Licensor’s intent is that such collected data is used strictly for analytics and operational purposes, and that promotional or newsletter emails are only sent where the relevant user has given explicit consent (e.g., opt-in).
+
+   8.3. Your Responsibility as Deployer
+        If you deploy the Software (with or without modifications), YOU are solely responsible for:
+        - complying with all applicable data protection, privacy, and electronic communications laws and regulations (including but not limited to obtaining any required notices, consents, and opt-ins);
+        - providing your own privacy notice and terms of use to your end users as required by law;
+        - ensuring that you do not use collected data in a manner inconsistent with your own privacy disclosures or applicable law.
+
+   8.4. Disclaimer
+        Nothing in this License constitutes legal advice. The Licensor makes no representation that the Software’s default configuration satisfies any particular legal or regulatory requirement. You must seek your own legal counsel for compliance in your jurisdiction.
+
+9. NO TRADEMARK LICENSE
+   9.1. Except as expressly set forth in Section 7, this License does not grant you any rights to use the Licensor’s name, logos, or trademarks.
+   9.2. You may state factually that your project “uses [PROJECT NAME]” but may not imply endorsement or sponsorship by the Licensor.
+
+10. COMPLIANCE AND TERMINATION
+   10.1. Any use of the Software in violation of this License is prohibited and will automatically terminate your rights under this License.
+   10.2. Upon termination, you must:
+         - cease all use of the Software; and
+         - destroy all copies of the Software in your possession or control.
+   10.3. Termination does not limit any other rights or remedies the Licensor may have at law or in equity.
+
+11. DISCLAIMER OF WARRANTY
+   THE SOFTWARE IS PROVIDED “AS IS” AND “AS AVAILABLE”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT. YOU ASSUME ALL RISKS ASSOCIATED WITH USING THE SOFTWARE.
+
+12. LIMITATION OF LIABILITY
+   TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE LICENSOR OR CONTRIBUTORS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE, INCLUDING BUT NOT LIMITED TO DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES.
+
+13. GOVERNING LAW AND JURISDICTION
+   13.1. This License shall be governed by and construed in accordance with the laws of [JURISDICTION — e.g., “the State of ___, Country ___”], without regard to its conflict of laws principles.
+   13.2. Any disputes arising out of or relating to this License or the use of the Software shall be subject to the exclusive jurisdiction of the courts located in [JURISDICTION], and you consent to such jurisdiction and venue.
+
+14. SEVERABILITY
+   If any provision of this License is held invalid or unenforceable, the remaining provisions shall remain in full force and effect.
+
+15. ENTIRE AGREEMENT
+   This License constitutes the entire agreement between you and the Licensor regarding the Software and supersedes all prior or contemporaneous understandings.
