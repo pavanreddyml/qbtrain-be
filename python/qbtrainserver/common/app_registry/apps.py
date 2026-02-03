@@ -8,27 +8,53 @@ class AppRegistryConfig(AppConfig):
 
     def ready(self):
         """
-        Validate that all apps in the registry have unique appIds.
+        Validate that all apps in the registry have globally-unique **ids**
+        (slugs), which are used for routing (e.g. /app/<id>).
+        Falls back to appId only for legacy entries that have no id.
+        Compatible with both the new normalized structure:
+            APPS: Dict[category_id -> Dict[subcategory_id -> List[app_dict]]]
+        and the legacy structure:
+            APPS: Dict[category_name, List[section_dict{ apps: [...] }]]
         """
         from .data import APPS
         
-        seen_ids = set()
+        seen_keys = set()
         duplicates = []
 
-        # Iterate through Categories -> Subcategories -> Apps
-        for category, subcats in APPS.items():
-            for subcat in subcats:
-                for app in subcat.get("apps", []):
-                    # Only validate if appId exists (allows gradual migration)
-                    app_id = app.get("appId")
-                    
-                    if app_id:
-                        if app_id in seen_ids:
-                            duplicates.append(f"{app_id} (in {subcat['subcategory']})")
-                        seen_ids.add(app_id)
+        if not isinstance(APPS, dict):
+            return
+
+        for cat_key, sub in APPS.items():
+            # New structure: Dict[subcat_id -> List[apps]]
+            if isinstance(sub, dict):
+                for sub_key, apps in (sub.items() if sub else []):
+                    for app in apps or []:
+                        # Prefer id (new routing), fallback to legacy appId if no id present
+                        key = app.get("id") or app.get("appId")
+                        if not key:
+                            continue
+                        if key in seen_keys:
+                            duplicates.append(f"{key} (category={cat_key}, subcategory={sub_key})")
+                        else:
+                            seen_keys.add(key)
+                continue
+
+            # Legacy structure: List[sections], each with {"apps": [...]}
+            if isinstance(sub, list):
+                for section in sub:
+                    apps = (section or {}).get("apps") or []
+                    for app in apps:
+                        key = app.get("id") or app.get("appId")
+                        if not key:
+                            continue
+                        if key in seen_keys:
+                            sec_name = (section or {}).get("subcategory") or (section or {}).get("name") or "unknown"
+                            duplicates.append(f"{key} (legacy; category={cat_key}, section={sec_name})")
+                        else:
+                            seen_keys.add(key)
 
         if duplicates:
             raise ImproperlyConfigured(
-                f"Duplicate appIds detected in registry: {', '.join(duplicates)}. "
-                "appIds must be unique for routing."
+                f"Duplicate app ids detected in registry: {', '.join(duplicates)}. "
+                "App ids (or legacy appIds when id is missing) must be globally unique for routing."
             )

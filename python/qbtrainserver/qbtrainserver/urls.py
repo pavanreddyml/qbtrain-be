@@ -11,4 +11,6 @@ urlpatterns = [
 
     path('api/apps/', include('common.app_registry.urls')),
     path('api/clients/', include('common.clients.urls')),
+
+    path('api/apps/aisecurity/crdlr/', include('apps.aisecurity.crdlr.urls')),
 ]

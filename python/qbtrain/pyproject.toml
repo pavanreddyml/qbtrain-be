@@ -20,6 +20,12 @@ dependencies = [
     "gunicorn",
     "boto3",
     "ollama",
+    "pydantic",
+    "sqlglot",
+    "sqlite3",
+    "openai",
+    "vertexai",
+    "torch"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
