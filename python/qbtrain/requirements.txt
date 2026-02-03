@@ -1,7 +1,0 @@
-django
-djangorestframework
-django-cors-headers
-drf-spectacular
-gunicorn
-sqlglot
-sqllite3
