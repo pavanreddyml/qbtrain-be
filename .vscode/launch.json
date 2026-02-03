@@ -1,0 +1,22 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    
+    {
+      "name": "Django: runserver (debug, global python)",
+      "type": "python",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/python/qbtrainserver",
+      "program": "${workspaceFolder}/python/qbtrainserver/manage.py",
+      "args": ["runserver", "0.0.0.0:8000", "--noreload"],
+      "django": true,
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "python": "${command:python.interpreterPath}",
+      "env": {
+        "DJANGO_SETTINGS_MODULE": "qbtrainserver.settings",
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  ]
+}

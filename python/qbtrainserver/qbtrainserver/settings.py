@@ -44,15 +44,22 @@ INSTALLED_APPS = [
     'drf_spectacular',
 
     'common.app_registry',
+
+    'apps.aisecurity.crdlr',
     
 ]
 
 MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
     'corsheaders.middleware.CorsMiddleware',
+    'django.middleware.security.SecurityMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
+from corsheaders.defaults import default_headers
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    "APP-PERMISSIONS",
 ]
 
 ROOT_URLCONF = 'qbtrainserver.urls'

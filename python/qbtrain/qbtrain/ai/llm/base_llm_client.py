@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import inspect
+import json
 import os
+import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Generator, List, Optional, Type
 
 from pydantic import BaseModel
+from qbtrain.tracers import Tracer
 
 Message = Dict[str, Any]
 
@@ -18,6 +21,7 @@ class LLMClient(ABC):
     Conventions:
       - model is passed via __init__ and stored as self.model
       - response/json_response/response_stream do NOT accept `model`
+      - tracer is passed per-call via response/json_response/response_stream (not via __init__)
       - conversation_history is trimmed to last N messages where:
           N = int($LLM_MAX_CONVERSATION_HISTORY) or 5
     """
@@ -30,8 +34,83 @@ class LLMClient(ABC):
     extra_init_params: List[Dict[str, Any]] = []
     param_display_names: Dict[str, str] = {}
 
-    def __init__(self, model: Optional[str] = None):
+    def __init__(
+        self,
+        model: Optional[str] = None,
+        *,
+        system_prompt: Optional[str] = None,
+        top_k: Optional[int] = None,
+        top_p: Optional[float] = None,
+        temperature: Optional[float] = None,
+        presence_penalty: Optional[float] = None,
+        frequency_penalty: Optional[float] = None,
+        max_output_tokens: Optional[int] = None,
+    ):
         self.model: Optional[str] = (model or None)
+
+        # Default params to apply when per-call values are None.
+        self._defaults: Dict[str, Any] = {
+            "system_prompt": system_prompt,
+            "top_k": top_k,
+            "top_p": top_p,
+            "temperature": temperature,
+            "presence_penalty": presence_penalty,
+            "frequency_penalty": frequency_penalty,
+            "max_output_tokens": max_output_tokens,
+        }
+
+    # ---- param helpers ----
+    def _effective_param(self, name: str, call_value: Any) -> Any:
+        return call_value if call_value is not None else self._defaults.get(name)
+
+    # ---- trace payload size helpers ----
+    @staticmethod
+    def trace_max_chars() -> int:
+        """
+        Max characters to store per large trace string field.
+        - default: 100_000
+        - set to 0 to omit large string fields
+        - set to -1 for unlimited (NOT recommended)
+        """
+        raw = (os.getenv("LLM_TRACE_MAX_CHARS") or "").strip()
+        if not raw:
+            return 100_000
+        try:
+            return int(raw)
+        except ValueError:
+            return 100_000
+
+    @classmethod
+    def _clip_for_trace(cls, s: Optional[str]) -> Optional[str]:
+        if s is None:
+            return None
+        n = cls.trace_max_chars()
+        if n < 0:
+            return s
+        if n == 0:
+            return None
+        if len(s) <= n:
+            return s
+        extra = len(s) - n
+        return s[:n] + f"...<truncated {extra} chars>"
+
+    @classmethod
+    def _clip_json_for_trace(cls, obj: Any) -> Any:
+        """
+        Best-effort clipping for very large dict/list outputs by clipping their JSON string.
+        Returns original object if reasonably small, otherwise returns a clipped string.
+        """
+        try:
+            s = json.dumps(obj, ensure_ascii=False, default=str)
+        except Exception:
+            return obj
+        clipped = cls._clip_for_trace(s)
+        return obj if clipped == s else clipped
+
+    # ---- tracer helpers (no-op unless tracer provided per-call) ----
+    def _trace(self, tracer: Optional[Tracer], **kwargs: Any) -> None:
+        if tracer is not None:
+            tracer.trace(agent_name=self.__class__.__name__, __type__="llm", **kwargs)
 
     # ---- conversation history helpers ----
     @staticmethod
@@ -121,6 +200,7 @@ class LLMClient(ABC):
         presence_penalty: Optional[float] = None,
         frequency_penalty: Optional[float] = None,
         max_output_tokens: Optional[int] = None,
+        tracer: Optional[Tracer] = None,
         *args: Any,
         **kwargs: Any,
     ) -> str:
@@ -130,7 +210,7 @@ class LLMClient(ABC):
     def json_response(
         self,
         prompt: str,
-        schema: Type[BaseModel],
+        schema: Optional[Type[BaseModel]] = None,
         system_prompt: Optional[str] = None,
         conversation_history: Optional[List[Message]] = None,
         top_k: Optional[int] = None,
@@ -139,6 +219,7 @@ class LLMClient(ABC):
         presence_penalty: Optional[float] = None,
         frequency_penalty: Optional[float] = None,
         max_output_tokens: Optional[int] = None,
+        tracer: Optional[Tracer] = None,
         *args: Any,
         **kwargs: Any,
     ) -> Dict[str, Any]:
@@ -156,7 +237,24 @@ class LLMClient(ABC):
         presence_penalty: Optional[float] = None,
         frequency_penalty: Optional[float] = None,
         max_output_tokens: Optional[int] = None,
+        tracer: Optional[Tracer] = None,
         *args: Any,
         **kwargs: Any,
     ) -> Generator[str, None, None]:
         raise NotImplementedError
+
+    # ---- utility for timing/tracing ----
+    def _timed(self):
+        class _Ctx:
+            def __enter__(_self):
+                _self.t0 = time.perf_counter()
+                return _self
+
+            def __exit__(_self, exc_type, exc, tb):
+                _self.t1 = time.perf_counter()
+
+            @property
+            def ms(_self) -> int:
+                return int((_self.t1 - _self.t0) * 1000)
+
+        return _Ctx()

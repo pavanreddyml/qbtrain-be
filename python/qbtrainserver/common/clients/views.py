@@ -194,8 +194,6 @@ def llm_stream_response(request):
         client = _build_llm_client(client_details)
         kwargs = _request_kwargs(chat_details)
 
-        print(kwargs)
-
         def generator() -> Generator[str, None, None]:
             try:
                 for chunk in client.response_stream(**kwargs):

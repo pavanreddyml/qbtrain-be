@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import shutil
 import threading
@@ -12,6 +13,7 @@ from pathlib import Path
 from typing import Any, Deque, Dict, Generator, List, Optional, Type
 
 from pydantic import BaseModel
+from qbtrain.tracers import Tracer
 
 from .base_llm_client import LLMClient, Message
 
@@ -57,8 +59,29 @@ class HuggingFaceClient(LLMClient):
     _CURRENT: Optional[DownloadTask] = None
     _WORKER: Optional[threading.Thread] = None
 
-    def __init__(self, models_dir: str = "./hf_models", model: Optional[str] = None):
-        super().__init__(model=model)
+    def __init__(
+        self,
+        models_dir: str = "./hf_models",
+        model: Optional[str] = None,
+        *,
+        system_prompt: Optional[str] = None,
+        top_k: Optional[int] = None,
+        top_p: Optional[float] = None,
+        temperature: Optional[float] = None,
+        presence_penalty: Optional[float] = None,
+        frequency_penalty: Optional[float] = None,
+        max_output_tokens: Optional[int] = None,
+    ):
+        super().__init__(
+            model=model,
+            system_prompt=system_prompt,
+            top_k=top_k,
+            top_p=top_p,
+            temperature=temperature,
+            presence_penalty=presence_penalty,
+            frequency_penalty=frequency_penalty,
+            max_output_tokens=max_output_tokens,
+        )
         self.models_dir = Path(models_dir)
         self.models_dir.mkdir(parents=True, exist_ok=True)
         self._pipelines: Dict[str, Any] = {}
@@ -162,10 +185,7 @@ class HuggingFaceClient(LLMClient):
     @classmethod
     def download_status(cls) -> Dict[str, Any]:
         with cls._LOCK:
-            queue_list = [
-                {"model_id": t.model_id, "status": t.status, "progress": round(t.progress, 2)}
-                for t in list(cls._QUEUE)
-            ]
+            queue_list = [{"model_id": t.model_id, "status": t.status, "progress": round(t.progress, 2)} for t in list(cls._QUEUE)]
             current = None
             if cls._CURRENT:
                 current = {
@@ -226,18 +246,28 @@ class HuggingFaceClient(LLMClient):
         presence_penalty: Optional[float] = None,
         frequency_penalty: Optional[float] = None,
         max_output_tokens: Optional[int] = None,
+        tracer: Optional[Tracer] = None,
         *args: Any,
         **kwargs: Any,
     ) -> str:
         if not self.model:
             raise ValueError("model is required (pass in clientDetails.params.model).")
-        _hf_guardrails(top_k, presence_penalty, frequency_penalty)
+
+        eff_system = self._effective_param("system_prompt", system_prompt)
+        eff_top_k = self._effective_param("top_k", top_k)
+        eff_top_p = self._effective_param("top_p", top_p)
+        eff_temp = self._effective_param("temperature", temperature)
+        eff_pres = self._effective_param("presence_penalty", presence_penalty)
+        eff_freq = self._effective_param("frequency_penalty", frequency_penalty)
+        eff_max = self._effective_param("max_output_tokens", max_output_tokens)
+
+        _hf_guardrails(eff_top_k, eff_pres, eff_freq)
 
         conversation_history = self.trim_conversation_history(conversation_history)
 
         full_prompt = ""
-        if system_prompt:
-            full_prompt += f"{system_prompt}\n\n"
+        if eff_system:
+            full_prompt += f"{eff_system}\n\n"
         if conversation_history:
             for m in conversation_history:
                 full_prompt += f"{m.get('role','user')}: {m.get('content','')}\n"
@@ -246,24 +276,44 @@ class HuggingFaceClient(LLMClient):
         pipe = self._get_pipeline(self.model)
 
         gen_kwargs: Dict[str, Any] = {}
-        if max_output_tokens is not None:
-            gen_kwargs["max_new_tokens"] = max_output_tokens
-        if temperature is not None:
-            gen_kwargs["temperature"] = temperature
-        if top_p is not None:
-            gen_kwargs["top_p"] = top_p
-        if top_k is not None:
-            gen_kwargs["top_k"] = top_k
+        if eff_max is not None:
+            gen_kwargs["max_new_tokens"] = eff_max
+        if eff_temp is not None:
+            gen_kwargs["temperature"] = eff_temp
+        if eff_top_p is not None:
+            gen_kwargs["top_p"] = eff_top_p
+        if eff_top_k is not None:
+            gen_kwargs["top_k"] = eff_top_k
         if any(k in gen_kwargs for k in ("temperature", "top_p", "top_k")):
             gen_kwargs["do_sample"] = True
 
-        out = pipe(full_prompt, **gen_kwargs)[0]["generated_text"]
-        return out.split("assistant:", 1)[-1].strip()
+        trace_extra = kwargs.pop("_trace", None)
+        with self._timed() as t:
+            out = pipe(full_prompt, **gen_kwargs)[0]["generated_text"]
+        result = out.split("assistant:", 1)[-1].strip()
+
+        self._trace(
+            tracer,
+            operation="response",
+            model=self.model,
+            params={k: v for k, v in {"temperature": eff_temp, "top_p": eff_top_p, "top_k": eff_top_k, "max_output_tokens": eff_max}.items() if v is not None},
+            system_prompt_preview=(eff_system[:200] if eff_system else None),
+            system_prompt_length=(len(eff_system) if eff_system else 0),
+            prompt_preview=prompt[:200],
+            prompt_length=len(prompt),
+            conv_history_length=len(conversation_history or []),
+            latency_ms=t.ms,
+            **(trace_extra or {}),
+            input_tokens=None,
+            output_tokens=None,
+            total_tokens=None,
+        )
+        return result
 
     def json_response(
         self,
         prompt: str,
-        schema: Type[BaseModel],
+        schema: Optional[Type[BaseModel]] = None,
         system_prompt: Optional[str] = None,
         conversation_history: MessageList = None,
         top_k: Optional[int] = None,
@@ -272,6 +322,7 @@ class HuggingFaceClient(LLMClient):
         presence_penalty: Optional[float] = None,
         frequency_penalty: Optional[float] = None,
         max_output_tokens: Optional[int] = None,
+        tracer: Optional[Tracer] = None,
         *args: Any,
         **kwargs: Any,
     ) -> Dict[str, Any]:
@@ -285,9 +336,13 @@ class HuggingFaceClient(LLMClient):
             presence_penalty=presence_penalty,
             frequency_penalty=frequency_penalty,
             max_output_tokens=max_output_tokens,
+            tracer=tracer,
+            **kwargs,
         )
-        obj = schema.model_validate_json(txt)
-        return obj.model_dump()
+        if schema is not None:
+            obj = schema.model_validate_json(txt)
+            return obj.model_dump()
+        return json.loads(txt or "{}")
 
     def response_stream(
         self,
@@ -300,18 +355,28 @@ class HuggingFaceClient(LLMClient):
         presence_penalty: Optional[float] = None,
         frequency_penalty: Optional[float] = None,
         max_output_tokens: Optional[int] = None,
+        tracer: Optional[Tracer] = None,
         *args: Any,
         **kwargs: Any,
     ) -> Generator[str, None, None]:
         if not self.model:
             raise ValueError("model is required (pass in clientDetails.params.model).")
-        _hf_guardrails(top_k, presence_penalty, frequency_penalty)
+
+        eff_system = self._effective_param("system_prompt", system_prompt)
+        eff_top_k = self._effective_param("top_k", top_k)
+        eff_top_p = self._effective_param("top_p", top_p)
+        eff_temp = self._effective_param("temperature", temperature)
+        eff_pres = self._effective_param("presence_penalty", presence_penalty)
+        eff_freq = self._effective_param("frequency_penalty", frequency_penalty)
+        eff_max = self._effective_param("max_output_tokens", max_output_tokens)
+
+        _hf_guardrails(eff_top_k, eff_pres, eff_freq)
 
         conversation_history = self.trim_conversation_history(conversation_history)
 
         full_prompt = ""
-        if system_prompt:
-            full_prompt += f"{system_prompt}\n\n"
+        if eff_system:
+            full_prompt += f"{eff_system}\n\n"
         if conversation_history:
             for m in conversation_history:
                 full_prompt += f"{m.get('role','user')}: {m.get('content','')}\n"
@@ -329,14 +394,14 @@ class HuggingFaceClient(LLMClient):
 
         inputs = tok(full_prompt, return_tensors="pt")
         gen_kwargs: Dict[str, Any] = {"input_ids": inputs.input_ids, "streamer": streamer}
-        if max_output_tokens is not None:
-            gen_kwargs["max_new_tokens"] = max_output_tokens
-        if temperature is not None:
-            gen_kwargs["temperature"] = temperature
-        if top_p is not None:
-            gen_kwargs["top_p"] = top_p
-        if top_k is not None:
-            gen_kwargs["top_k"] = top_k
+        if eff_max is not None:
+            gen_kwargs["max_new_tokens"] = eff_max
+        if eff_temp is not None:
+            gen_kwargs["temperature"] = eff_temp
+        if eff_top_p is not None:
+            gen_kwargs["top_p"] = eff_top_p
+        if eff_top_k is not None:
+            gen_kwargs["top_k"] = eff_top_k
         if any(k in gen_kwargs for k in ("temperature", "top_p", "top_k")):
             gen_kwargs["do_sample"] = True
 
@@ -345,8 +410,24 @@ class HuggingFaceClient(LLMClient):
         def _gen():
             mdl.generate(**gen_kwargs)
 
-        th = threading.Thread(target=_gen, daemon=True)
-        th.start()
-        for piece in streamer:
-            yield piece
-        th.join()
+        trace_extra = kwargs.pop("_trace", None)
+        with self._timed() as t:
+            th = threading.Thread(target=_gen, daemon=True)
+            th.start()
+            for piece in streamer:
+                yield piece
+            th.join()
+
+        self._trace(
+            tracer,
+            operation="response_stream",
+            model=self.model,
+            params={k: v for k, v in {"temperature": eff_temp, "top_p": eff_top_p, "top_k": eff_top_k, "max_output_tokens": eff_max}.items() if v is not None},
+            system_prompt_preview=(eff_system[:200] if eff_system else None),
+            system_prompt_length=(len(eff_system) if eff_system else 0),
+            prompt_preview=prompt[:200],
+            prompt_length=len(prompt),
+            conv_history_length=len(conversation_history or []),
+            latency_ms=t.ms,
+            **(trace_extra or {}),
+        )

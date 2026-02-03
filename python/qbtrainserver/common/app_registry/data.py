@@ -1,100 +1,150 @@
-# python/qbtrainserver/common/app_registry/data.py
+"""
+Standardized backend registry data
+- order: numeric string used for sorting
+- id: lowercase, no spaces/specials (used in URLs & images)
+"""
 
+# Categories: List[Dict]
 CATEGORIES = [
-    {
-        "id": "01",
-        "name": "AI",
-        "image": "ai_category.png",
-        "description": "Hands-on labs for core AI/LLM product skills.",
-    },
+    {"order": "01", "id": "ai", "name": "AI", "description": "Hands-on labs for core AI/LLM product skills."},
+    {"order": "02", "id": "ai-security", "name": "AI Security", "description": "Hands-on labs for AI Security product skills."},
 ]
 
-SECTION_METADATA = {
-    "Foundations": {"duration": "15-20 minutes", "topics": ["Systems", "LLMs"]},
-    "Foundations 2": {"duration": "20-30 minutes", "topics": ["Hyperparameters", "Interactions"]},
+# Subcategories: Dict[category_id] -> List[Dict]
+SUBCATEGORIES = {
+    "ai": [
+        {
+            "order": "01",
+            "id": "foundations",
+            "name": "Foundations",
+            "description": "Tokens, context windows, embeddings, and sampling.",
+            "duration": "15-20 minutes",
+            "topics": ["Systems", "LLMs"],
+        },
+        {
+            "order": "02",
+            "id": "foundations-2",
+            "name": "Foundations 2",
+            "description": "Advanced parameter interactions and complex sampling strategies.",
+            "duration": "20-30 minutes",
+            "topics": ["Hyperparameters", "Interactions"],
+        },
+    ],
+    "ai-security": [
+        {
+            "order": "01",
+            "id": "ai-security-basics",
+            "name": "AI Security Basics",
+            "description": "Hands-on labs for AI security basics.",
+            "duration": "15-20 minutes",
+            "topics": ["AI Security"],
+        },
+    ],
 }
 
-DEFAULT_APP_META = {"duration": "15-25 minutes", "topics": ["LLMs", "Applied AI"]}
-
+# Apps: Dict[category_id] -> Dict[subcategory_id] -> List[Dict]
+# NOTE: Uses category/subcategory **id** keys (not order). Each app has:
+#   - order: numeric string for sorting within the subcategory
+#   - id: slug used for URLs and images
 APPS = {
-    "AI": [
-        {
-            "id": "01.01",
-            "subcategory": "Foundations",
-            "description": "Understand tokens, context windows, embeddings, and sampling.",
-            "apps": [
-                {
-                    "id": "01.01.01",
-                    "appId": "temperature-101",
-                    "name": "Temperature 101: From Logic to Chaos",
-                    "image": "app_temperature_101.png",
-                    "description": "Master the temperature hyperparameter through an interactive guided tour.\nObserve how randomness affects creativity, logic, and hallucination.\nLearn safe ranges for coding vs. creative writing tasks.\nDeliver a deep understanding of sampling strategies.",
-                },
-                {
-                    "id": "01.01.02",
-                    "appId": "topk-101",
-                    "name": "Top-K 101: Taming the Tail",
-                    "image": "app_topk_101.png",
-                    "description": "Understand how Top-K cuts off unlikely tokens to prevent incoherence.\nExperiment with greedy decoding (K=1) vs wide sampling.\nLearn when to use Top-K instead of (or with) Temperature.\nControl the vocabulary pool size for your model.",
-                },
-                {
-                    "id": "01.01.03",
-                    "appId": "topp-101",
-                    "name": "Top-P 101: Nucleus Sampling",
-                    "image": "app_topp_101.png",
-                    "description": "Learn how Top-P (Nucleus Sampling) dynamically adjusts the token pool.\nCompare it with Top-K and Temperature.\nUnderstand when to use it for more natural-sounding text.",
-                },
-                {
-                    "id": "01.01.04",
-                    "appId": "presence-penalty-101",
-                    "name": "Presence Penalty: Preventing Repetition",
-                    "image": "app_presence_101.png",
-                    "description": "Explore how Presence Penalty discourages repeating topics.\nLearn to control the breadth of the conversation.",
-                },
-                {
-                    "id":   "01.01.05",
-                    "appId": "frequency-penalty-101",
-                    "name": "Frequency Penalty: Word Repetition",
-                    "image": "app_frequency_101.png",
-                    "description": "Understand how Frequency Penalty discourages repeating specific words.\nFine-tune your model to avoid stuttering or loops.",
-                },
-            ],
-        },
-        {
-            "id": "01.02",
-            "subcategory": "Foundations 2",
-            "description": "Advanced parameter interactions and complex sampling strategies.",
-            "apps": [
-                {
-                    "id": "01.02.01",
-                    "appId": "temp-vs-topk",
-                    "name": "Temp vs Top-K: The Power Struggle",
-                    "image": "app_temp_vs_topk.png",
-                    "description": "Explore how Temperature and Top-K interact and override each other.\nSee why Top-K=1 makes Temperature irrelevant.\nLearn to balance creativity with stability using both parameters.\nDebug complex hallucination issues.",
-                },
-                {
-                    "id": "01.02.02",
-                    "appId": "temp-vs-topp",
-                    "name": "Temp vs Top-P: The Safety Net",
-                    "image": "app_temp_vs_topp.png",
-                    "description": "Learn how Nucleus Sampling (Top-P) acts as a flexible safety net for Temperature.\nUnderstand why Low Top-P can tame High Temperature better than Top-K.\nExplore the trade-offs between 'Hard Cut' (Top-K) and 'Cumulative Sum' (Top-P).",
-                },
-                {
-                    "id": "01.02.03",
-                    "appId": "topk-vs-topp",
-                    "name": "Top-K vs Top-P: The Filter Funnel",
-                    "image": "app_topk_vs_topp.png",
-                    "description": "Master the 'Double Filter' strategy.\nSee how Top-K acts as a coarse filter while Top-P acts as a fine filter.\nLearn the Order of Operations (K then P) and how to stack them for precision control.",
-                },
-                {
-                    "id": "01.02.04",
-                    "appId": "creativity-cocktail",
-                    "name": "The Creativity Cocktail",
-                    "image": "app_creativity_cocktail.png",
-                    "description": "Experiment with the 3-way interaction of Temperature, Frequency Penalty, and Presence Penalty.\nSee how Penalties + High Temp force the model into 'The Void' (Hallucination).\nLearn to break loops without destroying coherence.",
-                },
-                
-            ],
-        },
-    ]
+    "ai": {  # AI
+        "foundations": [  # Foundations
+            {
+                "order": "01",
+                "id": "temperature-101",
+                "appId": "temperature-101",
+                "name": "Temperature 101: From Logic to Chaos",
+                "description": "Master temperature via an interactive tour; understand randomness vs. creativity/logic.",
+                "topics": ["temperature", "sampling"],
+                "duration": "15-20 minutes",
+            },
+            {
+                "order": "02",
+                "id": "topk-101",
+                "appId": "topk-101",
+                "name": "Top-K 101: Taming the Tail",
+                "description": "Understand how Top-K trims unlikely tokens to prevent incoherence; greedy decoding vs. wide sampling.",
+                "topics": ["top-k", "decoding"],
+                "duration": "15-20 minutes",
+            },
+            {
+                "order": "03",
+                "id": "topp-101",
+                "appId": "topp-101",
+                "name": "Top-P 101: Nucleus Sampling",
+                "description": "Learn Top-P; compare with Top-K & Temperature; when to use for natural-sounding text.",
+                "topics": ["top-p", "nucleus"],
+                "duration": "15-20 minutes",
+            },
+            {
+                "order": "04",
+                "id": "presence-penalty-101",
+                "appId": "presence-penalty-101",
+                "name": "Presence Penalty: Preventing Repetition",
+                "description": "How presence penalty discourages repeating topics; control breadth of conversation.",
+                "topics": ["penalties", "repetition"],
+                "duration": "15-20 minutes",
+            },
+            {
+                "order": "05",
+                "id": "frequency-penalty-101",
+                "appId": "frequency-penalty-101",
+                "name": "Frequency Penalty: Word Repetition",
+                "description": "Discourage repeating words; avoid stuttering or loops.",
+                "topics": ["penalties", "frequency"],
+                "duration": "15-20 minutes",
+            },
+        ],
+        "foundations-2": [  # Foundations 2
+            {
+                "order": "01",
+                "id": "temp-vs-topk",
+                "appId": "temp-vs-topk",
+                "name": "Temp vs Top-K: The Power Struggle",
+                "description": "See interactions/overrides; why Top-K=1 makes Temperature irrelevant.",
+                "topics": ["temperature", "top-k"],
+                "duration": "20-30 minutes",
+            },
+            {
+                "order": "02",
+                "id": "temp-vs-topp",
+                "appId": "temp-vs-topp",
+                "name": "Temp vs Top-P: The Safety Net",
+                "description": "Low Top-P can tame high Temperature; hard cut vs. cumulative sum trade-offs.",
+                "topics": ["temperature", "top-p"],
+                "duration": "20-30 minutes",
+            },
+            {
+                "order": "03",
+                "id": "topk-vs-topp",
+                "appId": "topk-vs-topp",
+                "name": "Top-K vs Top-P: The Filter Funnel",
+                "description": "Double filter strategy; K acts coarse, P acts fine; order of operations.",
+                "topics": ["top-k", "top-p"],
+                "duration": "20-30 minutes",
+            },
+            {
+                "order": "04",
+                "id": "creativity-cocktail",
+                "appId": "creativity-cocktail",
+                "name": "The Creativity Cocktail",
+                "description": "Explore Temperature + Frequency + Presence penalties; break loops without losing coherence.",
+                "topics": ["temperature", "penalties"],
+                "duration": "20-30 minutes",
+            },
+        ],
+    },
+    "ai-security": {  # AI Security
+        "ai-security-basics": [  # AI Security Basics
+            {
+                "order": "01",
+                "id": "crdlr",
+                "appId": "crdlr",
+                "name": "CRDLR: Adversarial Prompting Fundamentals",
+                "description": "Fundamentals of adversarial prompting; attack vectors & mitigations; hands-on practice.",
+                "topics": ["security", "prompting"],
+                "duration": "15-25 minutes",
+            },
+        ],
+    },
 }
