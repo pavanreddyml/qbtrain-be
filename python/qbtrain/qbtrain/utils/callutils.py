@@ -6,42 +6,34 @@ import json
 from typing import Any, Callable, Dict, List, Optional, Tuple, get_args, get_origin, Literal, Union
 
 
+def _format_param(p: inspect.Parameter) -> str:
+    """Format a parameter as 'name (type)' or 'name (type, default=X)'."""
+    anno = getattr(p.annotation, "__name__", str(p.annotation))
+    if p.default is inspect.Parameter.empty:
+        return f"  - {p.name} ({anno}, required)"
+    return f"  - {p.name} ({anno}, default={p.default!r})"
+
+
 def get_stored_procedure_signatures(functions: Dict[str, Callable]) -> Optional[str]:
     if not functions:
         return None
     sigs = []
     for name, func in functions.items():
-        sig = inspect.signature(func)
         doc = inspect.getdoc(func)
-        params = sig.parameters
-        args = [
-            {
-                "name": p.name,
-                "kind": str(p.kind),
-                "annotation": getattr(p.annotation, "__name__", str(p.annotation)),
-                "default": None if p.default is inspect.Parameter.empty else p.default,
-            }
+        params = inspect.signature(func).parameters
+
+        all_params = [
+            _format_param(p)
             for p in params.values()
-            if p.default is inspect.Parameter.empty
+            if p.name != "permissions"
         ]
-        kwargs = [
-            {
-                "name": p.name,
-                "kind": str(p.kind),
-                "annotation": getattr(p.annotation, "__name__", str(p.annotation)),
-                "default": None if p.default is inspect.Parameter.empty else p.default,
-            }
-            for p in params.values()
-            if p.default is not inspect.Parameter.empty
-        ]
-        sigs.append(
-            f"Function Name: {name}\n"
-            f"Signature: {sig}\n"
-            f"Args: {args}\n"
-            f"Kwargs: {kwargs}\n"
-            f"Docstring: {doc}\n"
-            "\n---\n"
-        )
+
+        parts = [f"Function Name: {name}"]
+        if all_params:
+            parts.append("Parameters (pass as kwargs):\n" + "\n".join(all_params))
+        if doc:
+            parts.append(f"Docstring: {doc}")
+        sigs.append("\n".join(parts) + "\n\n---\n")
     return "".join(sigs).strip()
 
 

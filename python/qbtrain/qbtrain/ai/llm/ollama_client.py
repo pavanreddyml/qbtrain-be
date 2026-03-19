@@ -304,9 +304,8 @@ class OllamaClient(LLMClient):
         parse_error: Optional[str] = None
         parsed: Optional[Dict[str, Any]] = None
         try:
-            parsed = schema.model_validate_json(txt).model_dump()
-        except ValidationError as e:
-            # Trace the raw output even on parse failure, then re-raise.
+            parsed = self._parse_json_response(txt or "{}", schema=schema)
+        except Exception as e:
             parse_error = str(e)
 
         input_tokens = r.get("prompt_eval_count")

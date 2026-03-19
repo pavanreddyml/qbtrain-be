@@ -204,10 +204,7 @@ class BedrockClient(LLMClient):
             **usage,
         )
 
-        if schema is not None:
-            obj = schema.model_validate_json(txt)
-            return obj.model_dump()
-        return json.loads(txt or "{}")
+        return self._parse_json_response(txt or "{}", schema=schema)
 
     @_bedrock_guardrails
     def response_stream(

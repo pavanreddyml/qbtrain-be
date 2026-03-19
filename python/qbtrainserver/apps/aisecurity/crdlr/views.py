@@ -119,44 +119,44 @@ def model_image(request):
         return _error_response(exc)
 
 # =========================
-# Brands
+# Makes
 # =========================
 @api_view(["GET"])
-def brands_list(request):
+def makes_list(request):
     try:
-        return Response(fn.list_brands(_request_permissions(request)))
+        return Response(fn.list_makes(_request_permissions(request)))
     except Exception as exc:
         return _error_response(exc)
 
 
 @api_view(["POST"])
-def brands_create(request):
+def makes_create(request):
     try:
-        return Response(fn.create_brand(_request_permissions(request), request.data), status=status.HTTP_201_CREATED)
+        return Response(fn.create_make(_request_permissions(request), request.data), status=status.HTTP_201_CREATED)
     except Exception as exc:
         return _error_response(exc)
 
 
 @api_view(["GET"])
-def brand_get(request, brand_id: int):
+def make_get(request, make_id: int):
     try:
-        return Response(fn.get_brand(_request_permissions(request), brand_id))
+        return Response(fn.get_make(_request_permissions(request), make_id))
     except Exception as exc:
         return _error_response(exc)
 
 
 @api_view(["PATCH", "PUT"])
-def brand_update(request, brand_id: int):
+def make_update(request, make_id: int):
     try:
-        return Response(fn.update_brand(_request_permissions(request), brand_id, request.data))
+        return Response(fn.update_make(_request_permissions(request), make_id, request.data))
     except Exception as exc:
         return _error_response(exc)
 
 
 @api_view(["DELETE"])
-def brand_delete(request, brand_id: int):
+def make_delete(request, make_id: int):
     try:
-        return Response(fn.delete_brand(_request_permissions(request), brand_id))
+        return Response(fn.delete_make(_request_permissions(request), make_id))
     except Exception as exc:
         return _error_response(exc)
 
@@ -167,7 +167,7 @@ def brand_delete(request, brand_id: int):
 @api_view(["GET"])
 def models_list(request):
     try:
-        return Response(fn.list_models(_request_permissions(request), brand_id=_qint(request, "brand_id")))
+        return Response(fn.list_models(_request_permissions(request), make_id=_qint(request, "make_id")))
     except Exception as exc:
         return _error_response(exc)
 
@@ -215,7 +215,7 @@ def vehicles_list(request):
                 _request_permissions(request),
                 status=_qstr(request, "status"),
                 dealership_id=_qint(request, "dealership_id"),
-                brand_id=_qint(request, "brand_id"),
+                make_id=_qint(request, "make_id"),
                 model_id=_qint(request, "model_id"),
                 year_min=_qint(request, "year_min"),
                 year_max=_qint(request, "year_max"),

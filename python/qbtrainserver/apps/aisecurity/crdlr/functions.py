@@ -32,9 +32,9 @@ from qbtrain.utils.authutils import Authorizer
 # ============================================================
 from .prompts import (
     SQL_PLANNER_SYSTEM_PROMPT_TEMPLATE,
-    SQL_SHARED_USER_PROMPT_TEMPLATE,
-    SQL_GEN_COT_SYSTEM_PROMPT_TEMPLATE,
-    SQL_GEN_NONCOT_SYSTEM_PROMPT_TEMPLATE,
+    SQL_PLANNER_USER_PROMPT_TEMPLATE,
+    SQL_GEN_SYSTEM_PROMPT_TEMPLATE,
+    SQL_GEN_USER_PROMPT_TEMPLATE,
     STORED_PROC_SYSTEM_PROMPT_TEMPLATE,
     STORED_PROC_USER_PROMPT_TEMPLATE,
     RESPONSE_GENERATOR_SYSTEM_PROMPT_TEMPLATE,
@@ -47,7 +47,7 @@ from .prompts import (
 BYPASS_PERMISSION = "SUPERUSER.ACCESS.ALL"
 
 TABLE_ACCESS = {
-    "cars": {"brand", "model", "vehicle"},
+    "cars": {"make", "model", "vehicle"},
     "sales": {"sales_order", "order_item", "payment", "order_status_history", "customer"},
     "staff": {"employee"},
     "dealership": {"dealership"}
@@ -288,30 +288,26 @@ def _build_sql_agent(
     stream: bool,
 ) -> SQLAgent:
     sql_gen_instructions = chat_details.get("sql_gen_instructions")
-    use_cot = bool(chat_details.get("use_cot", True))
-    cot_max_steps = int(chat_details.get("cot_max_steps", 5))
-    cot_flow_through_permissions = bool(chat_details.get("cot_flow_through_permissions", True))
+    max_steps = int(chat_details.get("max_steps", 5))
     tracer = AgentTracer()
     schema_context = get_schema_context(db_path)
     stored_procedures = stored_procedures if len(stored_procedures) > 0 else AVAILABLE_STORED_PROCEDURES.keys()
 
-    # Collect all relevant functions as stored procedures
-
+    # Build planner system prompt (includes schema, permissions, instructions)
     planner_system_prompt_template = SQL_PLANNER_SYSTEM_PROMPT_TEMPLATE.replace("{permissions_map_block}", authorizer.get_permissions_access(fmt="str"))
     planner_system_prompt_template = planner_system_prompt_template.replace("{additional_instructions}", str(sql_gen_instructions))
     planner_system_prompt_template = planner_system_prompt_template.replace("{schema_context}", str(schema_context))
 
-    sql_gen_system_prompt_template = SQL_GEN_COT_SYSTEM_PROMPT_TEMPLATE if use_cot else SQL_GEN_NONCOT_SYSTEM_PROMPT_TEMPLATE
-    sql_gen_system_prompt_template = sql_gen_system_prompt_template.replace("{permissions_map_block}", authorizer.get_permissions_access(fmt="str"))
-    sql_gen_system_prompt_template = sql_gen_system_prompt_template.replace("{additional_instructions}", str(sql_gen_instructions))
-    sql_gen_system_prompt_template = sql_gen_system_prompt_template.replace("{schema_context}", str(schema_context))
+    # Build SQL gen system prompt (simple - no schema, no permissions)
+    sql_gen_system_prompt_template = SQL_GEN_SYSTEM_PROMPT_TEMPLATE.replace("{additional_instructions}", str(sql_gen_instructions))
 
     stored_procedures_dict = {i: AVAILABLE_STORED_PROCEDURES[i] for i in stored_procedures if i in AVAILABLE_STORED_PROCEDURES}
 
     prompts = SQLAgentPrompts(
         planner_system_prompt_template=planner_system_prompt_template,
-        shared_user_prompt_template=SQL_SHARED_USER_PROMPT_TEMPLATE,
+        planner_user_prompt_template=SQL_PLANNER_USER_PROMPT_TEMPLATE,
         sql_gen_system_prompt_template=sql_gen_system_prompt_template,
+        sql_gen_user_prompt_template=SQL_GEN_USER_PROMPT_TEMPLATE,
         stored_proc_system_prompt_template=STORED_PROC_SYSTEM_PROMPT_TEMPLATE,
         stored_proc_user_prompt_template=STORED_PROC_USER_PROMPT_TEMPLATE,
     )
@@ -324,9 +320,7 @@ def _build_sql_agent(
         agent_permissions=agent_permissions,
         user_permissions=user_permissions,
         stored_procedures=stored_procedures_dict,
-        use_cot=use_cot,
-        cot_max_steps=cot_max_steps,
-        cot_flow_through_permissions=cot_flow_through_permissions,
+        max_steps=max_steps,
         tracer=tracer,
         stream=stream,
     )
@@ -334,7 +328,7 @@ def _build_sql_agent(
 # =========================
 # Dealerships (READ ONLY; no endpoints)
 # =========================
-def list_dealerships(permissions: Sequence[str]) -> List[Dict[str, Any]]:
+def list_dealerships(permissions: Sequence[str], limit: int = 100) -> List[Dict[str, Any]]:
     """
     List all dealerships (read-only helper).
 
@@ -349,7 +343,7 @@ def list_dealerships(permissions: Sequence[str]) -> List[Dict[str, Any]]:
     )
     conn = _connect_ro()
     try:
-        return _fetch_all(conn, "SELECT * FROM dealership ORDER BY name")
+        return _fetch_all(conn, "SELECT * FROM dealership ORDER BY name LIMIT ?", (limit,))
     finally:
         conn.close()
 
@@ -381,54 +375,54 @@ def get_dealership(permissions: Sequence[str], dealership_id: int) -> Dict[str, 
 
 
 # =========================
-# Brands
+# Makes
 # =========================
-def list_brands(permissions: Sequence[str]) -> List[Dict[str, Any]]:
+def list_makes(permissions: Sequence[str], limit: int = 100) -> List[Dict[str, Any]]:
     """
-    List all vehicle brands.
+    List all vehicle makes.
 
     Permissions:
         Requires Cars.Read (or bypass_all_auth).
 
     Returns:
-        List of brand rows.
+        List of make rows.
     """
     authorizer.authorize(
-        access="read", resources={"brand"}, permissions=list(permissions)
+        access="read", resources={"make"}, permissions=list(permissions)
     )
     conn = _connect_ro()
     try:
-        return _fetch_all(conn, "SELECT * FROM brand ORDER BY name")
+        return _fetch_all(conn, "SELECT * FROM make ORDER BY name LIMIT ?", (limit,))
     finally:
         conn.close()
 
 
-def get_brand(permissions: Sequence[str], brand_id: int) -> Dict[str, Any]:
+def get_make(permissions: Sequence[str], make_id: int) -> Dict[str, Any]:
     """
-    Get a brand by ID.
+    Get a make by ID.
 
     Permissions:
         Requires Cars.Read (or bypass_all_auth).
 
     Args:
-        brand_id: brand.brand_id
+        make_id: make.make_id
 
     Returns:
         Brand row.
     """
     authorizer.authorize(
-        access="read", resources={"brand"}, permissions=list(permissions)
+        access="read", resources={"make"}, permissions=list(permissions)
     )
     conn = _connect_ro()
     try:
-        return _get_or_404(conn, "brand", "brand_id", brand_id)
+        return _get_or_404(conn, "make", "make_id", make_id)
     finally:
         conn.close()
 
 
-def create_brand(permissions: Sequence[str], data: Mapping[str, Any]) -> Dict[str, Any]:
+def create_make(permissions: Sequence[str], data: Mapping[str, Any]) -> Dict[str, Any]:
     """
-    Create a brand.
+    Create a make.
 
     Permissions:
         Requires Cars.Write (or bypass_all_auth).
@@ -439,13 +433,13 @@ def create_brand(permissions: Sequence[str], data: Mapping[str, Any]) -> Dict[st
         country
 
     Returns:
-        Created brand row.
+        Created make row.
     """
     authorizer.authorize(
-        access="write", resources={"brand"}, permissions=list(permissions)
+        access="write", resources={"make"}, permissions=list(permissions)
     )
     authorizer.authorize(
-        access="read", resources={"brand"}, permissions=list(permissions)
+        access="read", resources={"make"}, permissions=list(permissions)
     )
     conn = _connect_rw()
     try:
@@ -453,17 +447,17 @@ def create_brand(permissions: Sequence[str], data: Mapping[str, Any]) -> Dict[st
         with conn:
             new_id = _exec_write(
                 conn,
-                "INSERT INTO brand (name, country, segment) VALUES (?, ?, ?)",
+                "INSERT INTO make (name, country, segment) VALUES (?, ?, ?)",
                 (data["name"], data.get("country"), data["segment"]),
             )
-        return get_brand(permissions, new_id)
+        return get_make(permissions, new_id)
     finally:
         conn.close()
 
 
-def update_brand(permissions: Sequence[str], brand_id: int, data: Mapping[str, Any]) -> Dict[str, Any]:
+def update_make(permissions: Sequence[str], make_id: int, data: Mapping[str, Any]) -> Dict[str, Any]:
     """
-    Update a brand.
+    Update a make.
 
     Permissions:
         Requires Cars.Write (or bypass_all_auth).
@@ -472,51 +466,51 @@ def update_brand(permissions: Sequence[str], brand_id: int, data: Mapping[str, A
         name, country, segment
 
     Returns:
-        Updated brand row.
+        Updated make row.
     """
     authorizer.authorize(
-        access="write", resources={"brand"}, permissions=list(permissions)
+        access="write", resources={"make"}, permissions=list(permissions)
     )
     authorizer.authorize(
-        access="read", resources={"brand"}, permissions=list(permissions)
+        access="read", resources={"make"}, permissions=list(permissions)
     )
     conn = _connect_rw()
     try:
         allowed = ["name", "country", "segment"]
         updates = _pick_updates(data, allowed)
-        _get_or_404(conn, "brand", "brand_id", brand_id)
+        _get_or_404(conn, "make", "make_id", make_id)
 
         sets = ", ".join([f"{k} = ?" for k in updates.keys()])
-        params = tuple(updates.values()) + (brand_id,)
+        params = tuple(updates.values()) + (make_id,)
         with conn:
-            conn.execute(f"UPDATE brand SET {sets} WHERE brand_id = ?", params)
-        return get_brand(permissions, brand_id)
+            conn.execute(f"UPDATE make SET {sets} WHERE make_id = ?", params)
+        return get_make(permissions, make_id)
     finally:
         conn.close()
 
 
-def delete_brand(permissions: Sequence[str], brand_id: int) -> Dict[str, Any]:
+def delete_make(permissions: Sequence[str], make_id: int) -> Dict[str, Any]:
     """
-    Delete a brand by ID.
+    Delete a make by ID.
 
     Permissions:
         Requires Cars.Write (or bypass_all_auth).
 
     Returns:
-        {"ok": True, "deleted": <brand_id>}
+        {"ok": True, "deleted": <make_id>}
     """
     authorizer.authorize(
-        access="write", resources={"brand"}, permissions=list(permissions)
+        access="write", resources={"make"}, permissions=list(permissions)
     )
     authorizer.authorize(
-        access="read", resources={"brand"}, permissions=list(permissions)
+        access="read", resources={"make"}, permissions=list(permissions)
     )
     conn = _connect_rw()
     try:
-        _get_or_404(conn, "brand", "brand_id", brand_id)
+        _get_or_404(conn, "make", "make_id", make_id)
         with conn:
-            conn.execute("DELETE FROM brand WHERE brand_id = ?", (brand_id,))
-        return {"ok": True, "deleted": brand_id}
+            conn.execute("DELETE FROM make WHERE make_id = ?", (make_id,))
+        return {"ok": True, "deleted": make_id}
     finally:
         conn.close()
 
@@ -524,44 +518,47 @@ def delete_brand(permissions: Sequence[str], brand_id: int) -> Dict[str, Any]:
 # =========================
 # Models
 # =========================
-def list_models(permissions: Sequence[str], brand_id: Optional[int] = None) -> List[Dict[str, Any]]:
+def list_models(permissions: Sequence[str], make_id: Optional[int] = None, limit: int = 100) -> List[Dict[str, Any]]:
     """
-    List models, optionally filtered by brand.
+    List models, optionally filtered by make.
 
     Permissions:
         Requires Cars.Read (or bypass_all_auth).
 
     Args:
-        brand_id: If provided, return only models belonging to this brand.
+        make_id: If provided, return only models belonging to this make.
 
     Returns:
-        List of model rows joined with brand metadata.
+        List of model rows joined with make metadata.
     """
     authorizer.authorize(
-        access="read", resources={"model", "brand"}, permissions=list(permissions)
+        access="read", resources={"model", "make"}, permissions=list(permissions)
     )
     conn = _connect_ro()
     try:
-        if brand_id is None:
+        if make_id is None:
             return _fetch_all(
                 conn,
                 """
-                SELECT m.*, b.name AS brand_name, b.segment AS brand_segment
+                SELECT m.*, mk.name AS make_name, mk.segment AS make_segment
                 FROM model m
-                JOIN brand b ON b.brand_id = m.brand_id
-                ORDER BY b.name, m.name
+                JOIN make mk ON mk.make_id = m.make_id
+                ORDER BY mk.name, m.name
+                LIMIT ?
                 """,
+                (limit,),
             )
         return _fetch_all(
             conn,
             """
-            SELECT m.*, b.name AS brand_name, b.segment AS brand_segment
+            SELECT m.*, mk.name AS make_name, mk.segment AS make_segment
             FROM model m
-            JOIN brand b ON b.brand_id = m.brand_id
-            WHERE m.brand_id = ?
+            JOIN make mk ON mk.make_id = m.make_id
+            WHERE m.make_id = ?
             ORDER BY m.name
+            LIMIT ?
             """,
-            (brand_id,),
+            (make_id, limit),
         )
     finally:
         conn.close()
@@ -569,7 +566,7 @@ def list_models(permissions: Sequence[str], brand_id: Optional[int] = None) -> L
 
 def get_model(permissions: Sequence[str], model_id: int) -> Dict[str, Any]:
     """
-    Get a model by ID (joined with brand metadata).
+    Get a model by ID (joined with make metadata).
 
     Permissions:
         Requires Cars.Read (or bypass_all_auth).
@@ -578,22 +575,22 @@ def get_model(permissions: Sequence[str], model_id: int) -> Dict[str, Any]:
         model_id: model.model_id
 
     Returns:
-        Model row with brand_name and brand_segment.
+        Model row with make_name and make_segment.
 
     Raises:
         NotFound: If model does not exist.
     """
     authorizer.authorize(
-        access="read", resources={"model", "brand"}, permissions=list(permissions)
+        access="read", resources={"model", "make"}, permissions=list(permissions)
     )
     conn = _connect_ro()
     try:
         obj = _fetch_one(
             conn,
             """
-            SELECT m.*, b.name AS brand_name, b.segment AS brand_segment
+            SELECT m.*, mk.name AS make_name, mk.segment AS make_segment
             FROM model m
-            JOIN brand b ON b.brand_id = m.brand_id
+            JOIN make mk ON mk.make_id = m.make_id
             WHERE m.model_id = ?
             """,
             (model_id,),
@@ -613,36 +610,36 @@ def create_model(permissions: Sequence[str], data: Mapping[str, Any]) -> Dict[st
         Requires Cars.Write (or bypass_all_auth).
 
     Required keys in `data`:
-        brand_id, name, body_style, fuel_type, drivetrain, msrp_min, msrp_max, description_md
+        make_id, name, body_style, fuel_type, drivetrain, msrp_min, msrp_max, description_md
 
     Optional keys:
         image_id
 
     Returns:
-        Created model row (joined with brand metadata).
+        Created model row (joined with make metadata).
     """
     authorizer.authorize(
         access="write", resources={"model"}, permissions=list(permissions)
     )
     authorizer.authorize(
-        access="read", resources={"model", "brand"}, permissions=list(permissions)
+        access="read", resources={"model", "make"}, permissions=list(permissions)
     )
     conn = _connect_rw()
     try:
         _require(
             data,
-            ["brand_id", "name", "body_style", "fuel_type", "drivetrain", "msrp_min", "msrp_max", "description_md"],
+            ["make_id", "name", "body_style", "fuel_type", "drivetrain", "msrp_min", "msrp_max", "description_md"],
         )
         with conn:
             new_id = _exec_write(
                 conn,
                 """
                 INSERT INTO model
-                (brand_id, name, body_style, fuel_type, drivetrain, msrp_min, msrp_max, description_md, image_id)
+                (make_id, name, body_style, fuel_type, drivetrain, msrp_min, msrp_max, description_md, image_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    data["brand_id"],
+                    data["make_id"],
                     data["name"],
                     data["body_style"],
                     data["fuel_type"],
@@ -666,20 +663,20 @@ def update_model(permissions: Sequence[str], model_id: int, data: Mapping[str, A
         Requires Cars.Write (or bypass_all_auth).
 
     Updatable keys:
-        brand_id, name, body_style, fuel_type, drivetrain, msrp_min, msrp_max, description_md
+        make_id, name, body_style, fuel_type, drivetrain, msrp_min, msrp_max, description_md
 
     Returns:
-        Updated model row (joined with brand metadata).
+        Updated model row (joined with make metadata).
     """
     authorizer.authorize(
         access="write", resources={"model"}, permissions=list(permissions)
     )
     authorizer.authorize(
-        access="read", resources={"model", "brand"}, permissions=list(permissions)
+        access="read", resources={"model", "make"}, permissions=list(permissions)
     )
     conn = _connect_rw()
     try:
-        allowed = ["brand_id", "name", "body_style", "fuel_type", "drivetrain", "msrp_min", "msrp_max", "description_md", "image_id"]
+        allowed = ["make_id", "name", "body_style", "fuel_type", "drivetrain", "msrp_min", "msrp_max", "description_md", "image_id"]
         updates = _pick_updates(data, allowed)
         _get_or_404(conn, "model", "model_id", model_id)
 
@@ -726,7 +723,7 @@ def list_vehicles(
     *,
     status: Optional[str] = None,
     dealership_id: Optional[int] = None,
-    brand_id: Optional[int] = None,
+    make_id: Optional[int] = None,
     model_id: Optional[int] = None,
     year_min: Optional[int] = None,
     year_max: Optional[int] = None,
@@ -734,6 +731,7 @@ def list_vehicles(
     price_max: Optional[int] = None,
     mileage_max: Optional[int] = None,
     q: Optional[str] = None,
+    limit: int = 100,
 ) -> List[Dict[str, Any]]:
     """
     List vehicles with optional filters.
@@ -743,15 +741,15 @@ def list_vehicles(
 
     Filters:
         status: {'AVAILABLE','RESERVED','SOLD','IN_SERVICE'}
-        dealership_id, brand_id, model_id
+        dealership_id, make_id, model_id
         year_min/year_max, price_min/price_max, mileage_max
-        q: LIKE search over vin, color, brand name, model name
+        q: LIKE search over vin, color, make name, model name
 
     Returns:
-        List of vehicle rows joined with dealership, model, and brand metadata.
+        List of vehicle rows joined with dealership, model, and make metadata.
     """
     authorizer.authorize(
-        access="read", resources={"vehicle", "dealership", "model", "brand"}, permissions=list(permissions)
+        access="read", resources={"vehicle", "dealership", "model", "make"}, permissions=list(permissions)
     )
     conn = _connect_ro()
     try:
@@ -766,8 +764,8 @@ def list_vehicles(
             add("v.status = ?", status)
         if dealership_id is not None:
             add("v.dealership_id = ?", int(dealership_id))
-        if brand_id is not None:
-            add("b.brand_id = ?", int(brand_id))
+        if make_id is not None:
+            add("mk.make_id = ?", int(make_id))
         if model_id is not None:
             add("m.model_id = ?", int(model_id))
         if year_min is not None:
@@ -782,10 +780,11 @@ def list_vehicles(
             add("v.mileage <= ?", int(mileage_max))
         if q is not None and q != "":
             like = f"%{q}%"
-            where.append("(v.vin LIKE ? OR v.color LIKE ? OR b.name LIKE ? OR m.name LIKE ?)")
+            where.append("(v.vin LIKE ? OR v.color LIKE ? OR mk.name LIKE ? OR m.name LIKE ?)")
             params.extend([like, like, like, like])
 
         where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+        params.append(limit)
         return _fetch_all(
             conn,
             f"""
@@ -793,13 +792,14 @@ def list_vehicles(
               v.*,
               d.name AS dealership_name, d.city AS dealership_city, d.state AS dealership_state,
               m.name AS model_name, m.body_style, m.fuel_type, m.drivetrain, m.image_id AS model_image_id,
-              b.brand_id, b.name AS brand_name, b.segment AS brand_segment
+              mk.make_id, mk.name AS make_name, mk.segment AS make_segment
             FROM vehicle v
             JOIN dealership d ON d.dealership_id = v.dealership_id
             JOIN model m ON m.model_id = v.model_id
-            JOIN brand b ON b.brand_id = m.brand_id
+            JOIN make mk ON mk.make_id = m.make_id
             {where_sql}
             ORDER BY v.created_at DESC, v.vehicle_id DESC
+            LIMIT ?
             """,
             tuple(params),
         )
@@ -809,7 +809,7 @@ def list_vehicles(
 
 def get_vehicle(permissions: Sequence[str], vehicle_id: int) -> Dict[str, Any]:
     """
-    Get a vehicle by ID (joined with dealership, model, brand metadata).
+    Get a vehicle by ID (joined with dealership, model, make metadata).
 
     Permissions:
         Requires Cars.Read (or bypass_all_auth).
@@ -824,7 +824,7 @@ def get_vehicle(permissions: Sequence[str], vehicle_id: int) -> Dict[str, Any]:
         NotFound: If vehicle does not exist.
     """
     authorizer.authorize(
-        access="read", resources={"vehicle", "dealership", "model", "brand"}, permissions=list(permissions)
+        access="read", resources={"vehicle", "dealership", "model", "make"}, permissions=list(permissions)
     )
     conn = _connect_ro()
     try:
@@ -835,11 +835,11 @@ def get_vehicle(permissions: Sequence[str], vehicle_id: int) -> Dict[str, Any]:
               v.*,
               d.name AS dealership_name, d.city AS dealership_city, d.state AS dealership_state,
               m.name AS model_name, m.body_style, m.fuel_type, m.drivetrain, m.image_id AS model_image_id,
-              b.brand_id, b.name AS brand_name, b.segment AS brand_segment
+              mk.make_id, mk.name AS make_name, mk.segment AS make_segment
             FROM vehicle v
             JOIN dealership d ON d.dealership_id = v.dealership_id
             JOIN model m ON m.model_id = v.model_id
-            JOIN brand b ON b.brand_id = m.brand_id
+            JOIN make mk ON mk.make_id = m.make_id
             WHERE v.vehicle_id = ?
             """,
             (vehicle_id,),
@@ -868,7 +868,7 @@ def create_vehicle(permissions: Sequence[str], data: Mapping[str, Any]) -> Dict[
         access="write", resources={"vehicle"}, permissions=list(permissions)
     )
     authorizer.authorize(
-        access="read", resources={"vehicle", "dealership", "model", "brand"}, permissions=list(permissions)
+        access="read", resources={"vehicle", "dealership", "model", "make"}, permissions=list(permissions)
     )
     conn = _connect_rw()
     try:
@@ -914,7 +914,7 @@ def update_vehicle(permissions: Sequence[str], vehicle_id: int, data: Mapping[st
         access="write", resources={"vehicle"}, permissions=list(permissions)
     )
     authorizer.authorize(
-        access="read", resources={"vehicle", "dealership", "model", "brand"}, permissions=list(permissions)
+        access="read", resources={"vehicle", "dealership", "model", "make"}, permissions=list(permissions)
     )
     conn = _connect_rw()
     try:
@@ -960,7 +960,7 @@ def delete_vehicle(permissions: Sequence[str], vehicle_id: int) -> Dict[str, Any
 # =========================
 # Customers
 # =========================
-def list_customers(permissions: Sequence[str], q: Optional[str] = None) -> List[Dict[str, Any]]:
+def list_customers(permissions: Sequence[str], q: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
     """
     List customers, optionally searching by name/email/phone.
 
@@ -979,7 +979,7 @@ def list_customers(permissions: Sequence[str], q: Optional[str] = None) -> List[
     conn = _connect_ro()
     try:
         if not q:
-            return _fetch_all(conn, "SELECT * FROM customer ORDER BY created_at DESC, customer_id DESC")
+            return _fetch_all(conn, "SELECT * FROM customer ORDER BY created_at DESC, customer_id DESC LIMIT ?", (limit,))
         like = f"%{q}%"
         return _fetch_all(
             conn,
@@ -987,8 +987,9 @@ def list_customers(permissions: Sequence[str], q: Optional[str] = None) -> List[
             SELECT * FROM customer
             WHERE first_name LIKE ? OR last_name LIKE ? OR email LIKE ? OR phone LIKE ?
             ORDER BY created_at DESC, customer_id DESC
+            LIMIT ?
             """,
-            (like, like, like, like),
+            (like, like, like, like, limit),
         )
     finally:
         conn.close()
@@ -1128,7 +1129,7 @@ def delete_customer(permissions: Sequence[str], customer_id: int) -> Dict[str, A
 # =========================
 # Employees
 # =========================
-def list_employees(permissions: Sequence[str], dealership_id: Optional[int] = None) -> List[Dict[str, Any]]:
+def list_employees(permissions: Sequence[str], dealership_id: Optional[int] = None, limit: int = 100) -> List[Dict[str, Any]]:
     """
     List employees, optionally filtered by dealership.
 
@@ -1154,7 +1155,9 @@ def list_employees(permissions: Sequence[str], dealership_id: Optional[int] = No
                 FROM employee e
                 JOIN dealership d ON d.dealership_id = e.dealership_id
                 ORDER BY e.last_name, e.first_name
+                LIMIT ?
                 """,
+                (limit,),
             )
         return _fetch_all(
             conn,
@@ -1164,8 +1167,9 @@ def list_employees(permissions: Sequence[str], dealership_id: Optional[int] = No
             JOIN dealership d ON d.dealership_id = e.dealership_id
             WHERE e.dealership_id = ?
             ORDER BY e.last_name, e.first_name
+            LIMIT ?
             """,
-            (dealership_id,),
+            (dealership_id, limit),
         )
     finally:
         conn.close()
@@ -1331,6 +1335,7 @@ def list_orders(
     employee_id: Optional[int] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+    limit: int = 100,
 ) -> List[Dict[str, Any]]:
     """
     List sales orders with optional filters.
@@ -1372,6 +1377,7 @@ def list_orders(
             add("o.order_date <= ?", date_to)
 
         where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+        params.append(limit)
         return _fetch_all(
             conn,
             f"""
@@ -1386,6 +1392,7 @@ def list_orders(
             JOIN dealership d ON d.dealership_id = o.dealership_id
             {where_sql}
             ORDER BY o.order_date DESC, o.order_id DESC
+            LIMIT ?
             """,
             tuple(params),
         )
@@ -1427,7 +1434,7 @@ def get_order(permissions: Sequence[str], order_id: int, expand: bool = True) ->
             "order_item",
             "vehicle",
             "model",
-            "brand",
+            "make",
             "payment",
             "order_status_history",
         },
@@ -1464,11 +1471,11 @@ def get_order(permissions: Sequence[str], order_id: int, expand: bool = True) ->
               oi.*,
               v.vin, v.model_year, v.color, v.mileage, v.list_price, v.status AS vehicle_status,
               m.name AS model_name, m.image_id AS model_image_id,
-              b.name AS brand_name
+              mk.name AS make_name
             FROM order_item oi
             JOIN vehicle v ON v.vehicle_id = oi.vehicle_id
             JOIN model m ON m.model_id = v.model_id
-            JOIN brand b ON b.brand_id = m.brand_id
+            JOIN make mk ON mk.make_id = m.make_id
             WHERE oi.order_id = ?
             ORDER BY oi.order_item_id
             """,
@@ -1526,7 +1533,7 @@ def create_order(permissions: Sequence[str], data: Mapping[str, Any]) -> Dict[st
             "order_item",
             "vehicle",
             "model",
-            "brand",
+            "make",
             "payment",
             "order_status_history",
         },
@@ -1590,7 +1597,7 @@ def update_order(permissions: Sequence[str], order_id: int, data: Mapping[str, A
             "order_item",
             "vehicle",
             "model",
-            "brand",
+            "make",
             "payment",
             "order_status_history",
         },
@@ -1676,7 +1683,7 @@ def add_order_item(permissions: Sequence[str], order_id: int, data: Mapping[str,
             "order_item",
             "vehicle",
             "model",
-            "brand",
+            "make",
             "payment",
             "order_status_history",
         },
@@ -1742,7 +1749,7 @@ def update_order_item(permissions: Sequence[str], order_id: int, order_item_id: 
             "order_item",
             "vehicle",
             "model",
-            "brand",
+            "make",
             "payment",
             "order_status_history",
         },
@@ -1804,7 +1811,7 @@ def remove_order_item(permissions: Sequence[str], order_id: int, order_item_id: 
             "order_item",
             "vehicle",
             "model",
-            "brand",
+            "make",
             "payment",
             "order_status_history",
         },
@@ -1868,7 +1875,7 @@ def set_order_status(permissions: Sequence[str], order_id: int, data: Mapping[st
             "order_item",
             "vehicle",
             "model",
-            "brand",
+            "make",
             "payment",
             "order_status_history",
         },
@@ -2010,7 +2017,7 @@ def create_payment(permissions: Sequence[str], order_id: int, data: Mapping[str,
         conn.close()
 
 
-def list_order_history(permissions: Sequence[str], order_id: int) -> List[Dict[str, Any]]:
+def list_order_history(permissions: Sequence[str], order_id: int, limit: int = 100) -> List[Dict[str, Any]]:
     """
     List status history entries for an order.
 
@@ -2040,8 +2047,9 @@ def list_order_history(permissions: Sequence[str], order_id: int) -> List[Dict[s
             LEFT JOIN employee e ON e.employee_id = h.changed_by_employee_id
             WHERE h.order_id = ?
             ORDER BY h.changed_at, h.history_id
+            LIMIT ?
             """,
-            (order_id,),
+            (order_id, limit),
         )
     finally:
         conn.close()
@@ -2063,11 +2071,11 @@ def inventory_report(permissions: Sequence[str], dealership_id: Optional[int] = 
     Returns:
         {
           "by_status": [{"dealership_id","dealership_name","status","count"}, ...],
-          "by_model":  [{"dealership_id","dealership_name","brand_name","model_name","count"}, ...]
+          "by_model":  [{"dealership_id","dealership_name","make_name","model_name","count"}, ...]
         }
     """
     authorizer.authorize(
-        access="read", resources={"vehicle", "dealership", "model", "brand"}, permissions=list(permissions)
+        access="read", resources={"vehicle", "dealership", "model", "make"}, permissions=list(permissions)
     )
     conn = _connect_ro()
     try:
@@ -2095,15 +2103,15 @@ def inventory_report(permissions: Sequence[str], dealership_id: Optional[int] = 
             f"""
             SELECT
               v.dealership_id, d.name AS dealership_name,
-              b.name AS brand_name, m.name AS model_name,
+              mk.name AS make_name, m.name AS model_name,
               COUNT(*) AS count
             FROM vehicle v
             JOIN dealership d ON d.dealership_id = v.dealership_id
             JOIN model m ON m.model_id = v.model_id
-            JOIN brand b ON b.brand_id = m.brand_id
+            JOIN make mk ON mk.make_id = m.make_id
             {where}
-            GROUP BY v.dealership_id, b.name, m.name
-            ORDER BY d.name, b.name, m.name
+            GROUP BY v.dealership_id, mk.name, m.name
+            ORDER BY d.name, mk.name, m.name
             """,
             tuple(params),
         )
@@ -2245,6 +2253,29 @@ def assistant_query(request_permissions: List[str], body: Dict[str, Any]) -> Dic
         agent_permissions = request_permissions
         user_permissions = request_permissions
 
+    # --- Injection classifier (pre-query) ---
+    use_classifier = chat_details.get("use_classifier", False)
+    classifier_model = (chat_details.get("classifier_model") or "").strip()
+
+    if use_classifier and classifier_model:
+        from qbtrain.ai.classifiers.injection_classifier import classify as run_classify
+
+        is_injection, confidence = run_classify(classifier_model, prompt)
+        classifier_trace = AgentTracer()
+        classifier_trace.trace(
+            "InjectionClassifier",
+            __type__="classification",
+            model=classifier_model,
+            is_injection=is_injection,
+            confidence=round(confidence, 4),
+            input_preview=prompt[:200],
+        )
+        if is_injection:
+            return {
+                "message": "Your request has been flagged as a potential prompt injection attack and has been blocked.",
+                "trace": {"calls": classifier_trace.get_traces()},
+            }
+
     llm_client = _instantiate_llm_client(client_details)
     agent = _build_sql_agent(
         db_path=_resolve_db_path(),
@@ -2255,6 +2286,18 @@ def assistant_query(request_permissions: List[str], body: Dict[str, Any]) -> Dic
         stored_procedures=stored_procedures,
         stream=False,
     )
+
+    # Merge classifier trace into agent tracer if classification passed
+    if use_classifier and classifier_model and agent.tracer:
+        agent.tracer.trace_steps.insert(0, {
+            "id": 0,
+            "agent_name": "InjectionClassifier",
+            "__type__": "classification",
+            "model": classifier_model,
+            "is_injection": False,
+            "confidence": round(confidence, 4),
+            "input_preview": prompt[:200],
+        })
 
     # Run SQLAgent (raw sql+results), then generate a customer-facing response outside the SQLAgent.
     raw_parts: List[str] = []
@@ -2317,6 +2360,30 @@ def assistant_stream(request_permissions: List[str], body: Dict[str, Any]) -> Ge
         agent_permissions = request_permissions
         user_permissions = request_permissions
 
+    # --- Injection classifier (pre-query) ---
+    use_classifier = chat_details.get("use_classifier", False)
+    classifier_model = (chat_details.get("classifier_model") or "").strip()
+
+    if use_classifier and classifier_model:
+        from qbtrain.ai.classifiers.injection_classifier import classify as run_classify
+
+        is_injection, confidence = run_classify(classifier_model, prompt)
+        classifier_trace_entry = {
+            "id": 0,
+            "agent_name": "InjectionClassifier",
+            "__type__": "classification",
+            "model": classifier_model,
+            "is_injection": is_injection,
+            "confidence": round(confidence, 4),
+            "input_preview": prompt[:200],
+        }
+        yield {"type": "trace", "content": classifier_trace_entry}
+
+        if is_injection:
+            yield {"type": "message", "content": "Your request has been flagged as a potential prompt injection attack and has been blocked."}
+            yield {"type": "trace", "content": {"calls": [classifier_trace_entry], "total_latency_ms": 0}}
+            return
+
     llm_client = _instantiate_llm_client(client_details)
     agent = _build_sql_agent(
         db_path=_resolve_db_path(),
@@ -2327,6 +2394,11 @@ def assistant_stream(request_permissions: List[str], body: Dict[str, Any]) -> Ge
         stored_procedures=stored_procedures,
         stream=True,
     )
+
+    # Merge classifier trace into agent tracer if classification passed
+    if use_classifier and classifier_model and agent.tracer:
+        agent.tracer.trace_steps.insert(0, classifier_trace_entry)
+
     start_total = time.monotonic()
 
     # Pass through action + trace events as they arrive (stream mode).
@@ -2389,12 +2461,12 @@ AVAILABLE_STORED_PROCEDURES = {
         "list_dealerships": list_dealerships,
         "get_dealership": get_dealership,
         
-        # Brands
-        "list_brands": list_brands,
-        "get_brand": get_brand,
-        "create_brand": create_brand,
-        "update_brand": update_brand,
-        "delete_brand": delete_brand,
+        # Makes
+        "list_makes": list_makes,
+        "get_make": get_make,
+        "create_make": create_make,
+        "update_make": update_make,
+        "delete_make": delete_make,
         
         # Models
         "list_models": list_models,

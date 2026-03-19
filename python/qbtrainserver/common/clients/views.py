@@ -284,6 +284,52 @@ def ollama_delete_model(request):
 
 
 # ============================
+# Injection Classifiers: list / download / classify
+# ============================
+
+from qbtrain.ai.classifiers.injection_classifier import (
+    INJECTION_CLASSIFIERS,
+    list_classifiers,
+    classify as run_classify,
+)
+
+
+@api_view(["GET"])
+def classifiers_list(request):
+    try:
+        return Response(list_classifiers(), status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(["POST"])
+def classifiers_download(request):
+    try:
+        model_id = (request.data.get("model_id") or "").strip()
+        if not model_id:
+            return Response({"error": "model_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        if model_id not in INJECTION_CLASSIFIERS:
+            return Response({"error": f"Unknown classifier: {model_id}"}, status=status.HTTP_400_BAD_REQUEST)
+        HuggingFaceClient.request_download(model_id=model_id)
+        return Response({"message": "queued", "status": HuggingFaceClient.download_status()}, status=status.HTTP_202_ACCEPTED)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(["POST"])
+def classifiers_classify(request):
+    try:
+        model_id = (request.data.get("model_id") or "").strip()
+        text = (request.data.get("text") or "").strip()
+        if not model_id or not text:
+            return Response({"error": "model_id and text are required"}, status=status.HTTP_400_BAD_REQUEST)
+        is_injection, confidence = run_classify(model_id, text)
+        return Response({"is_injection": is_injection, "confidence": round(confidence, 4)}, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ============================
 # Client specs: list classes & their __init__ parameters
 # ============================
 

@@ -21,6 +21,11 @@ urlpatterns = [
     path("ollama/models/", views.ollama_list_models, name="ollama_list_models"),
     path("ollama/models/delete/", views.ollama_delete_model, name="ollama_delete_model"),
 
+    # Injection Classifiers
+    path("classifiers/", views.classifiers_list, name="classifiers_list"),
+    path("classifiers/download/", views.classifiers_download, name="classifiers_download"),
+    path("classifiers/classify/", views.classifiers_classify, name="classifiers_classify"),
+
     # LLM calls
     path("llm/response/", views.llm_response, name="llm_response"),
     path("llm/json/", views.llm_json_response, name="llm_json_response"),

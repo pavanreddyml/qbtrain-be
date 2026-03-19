@@ -8,8 +8,9 @@ import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Generator, List, Optional, Type
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from qbtrain.tracers import Tracer
+from qbtrain.utils.jsonutils import extract_json_object, extract_first_json
 
 Message = Dict[str, Any]
 
@@ -186,6 +187,49 @@ class LLMClient(ABC):
             params.append(extra)
 
         return params
+
+    # ---- JSON response parsing with repair fallbacks ----
+    @staticmethod
+    def _parse_json_response(text: str, schema: Optional[Type[BaseModel]] = None) -> Dict[str, Any]:
+        """Parse JSON from LLM output with progressive repair fallbacks.
+
+        Fallback chain:
+          1. Direct json.loads / Pydantic validation
+          2. extract_json_object (strips fences, repairs trailing commas, handles single quotes)
+          3. extract_first_json (scans for first valid JSON object via raw_decode)
+        """
+        if not text or not text.strip():
+            return {}
+
+        # 1) Try strict parsing first
+        try:
+            if schema is not None:
+                return schema.model_validate_json(text).model_dump()
+            return json.loads(text)
+        except Exception:
+            pass
+
+        # 2) Try extract_json_object (fence stripping + repair)
+        try:
+            obj = extract_json_object(text)
+            if obj and isinstance(obj, dict):
+                if schema is not None:
+                    return schema.model_validate(obj).model_dump()
+                return obj
+        except Exception:
+            pass
+
+        # 3) Try extract_first_json (scanning raw_decode)
+        try:
+            obj = extract_first_json(text)
+            if obj and isinstance(obj, dict):
+                if schema is not None:
+                    return schema.model_validate(obj).model_dump()
+                return obj
+        except Exception:
+            pass
+
+        raise ValueError(f"Could not parse JSON from LLM output: {text[:200]}")
 
     # ---- core interface ----
     @abstractmethod

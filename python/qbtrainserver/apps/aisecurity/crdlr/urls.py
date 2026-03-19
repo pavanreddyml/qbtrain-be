@@ -9,12 +9,12 @@ urlpatterns = [
     # Model images (query param: ?id=<model_id>)
     path("models/image/", views.model_image, name="model_image"),
     # Dealerships: intentionally no endpoints (read-only helpers exist in functions.py)
-    # Brands
-    path("brands/", views.brands_list, name="brands_list"),
-    path("brands/add/", views.brands_create, name="brands_create"),
-    path("brands/<int:brand_id>/", views.brand_get, name="brand_get"),
-    path("brands/<int:brand_id>/update/", views.brand_update, name="brand_update"),
-    path("brands/<int:brand_id>/delete/", views.brand_delete, name="brand_delete"),
+    # Makes
+    path("makes/", views.makes_list, name="makes_list"),
+    path("makes/add/", views.makes_create, name="makes_create"),
+    path("makes/<int:make_id>/", views.make_get, name="make_get"),
+    path("makes/<int:make_id>/update/", views.make_update, name="make_update"),
+    path("makes/<int:make_id>/delete/", views.make_delete, name="make_delete"),
     # Models
     path("models/", views.models_list, name="models_list"),
     path("models/add/", views.models_create, name="models_create"),

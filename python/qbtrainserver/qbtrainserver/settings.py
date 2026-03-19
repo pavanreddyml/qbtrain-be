@@ -46,7 +46,9 @@ INSTALLED_APPS = [
     'common.app_registry',
 
     'apps.aisecurity.crdlr',
-    
+    'apps.aisecurity.echoleak',
+    'apps.aisecurity.codeexec',
+    'common.exfil',
 ]
 
 MIDDLEWARE = [

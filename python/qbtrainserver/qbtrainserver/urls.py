@@ -13,4 +13,9 @@ urlpatterns = [
     path('api/clients/', include('common.clients.urls')),
 
     path('api/apps/aisecurity/crdlr/', include('apps.aisecurity.crdlr.urls')),
+    path('api/apps/aisecurity/echoleak/', include('apps.aisecurity.echoleak.urls')),
+    path('api/apps/aisecurity/codeexec/', include('apps.aisecurity.codeexec.urls')),
+    path('api/apps/aisecurity/modeltheft/', include('apps.aisecurity.modeltheft.urls')),
+
+    path('ex/', include('common.exfil.urls')),
 ]

@@ -21,6 +21,7 @@ def extract_single_sql_statement(text_in: str) -> str:
         s = re.sub(r"\s*```\s*$", "", s).strip()
     if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
         s = s[1:-1].strip()
+    s = s.strip('"').strip("'").strip()
     chunks = [c.strip() for c in s.split(";")]
     non_empty = [c for c in chunks if c]
     if not non_empty:
@@ -75,6 +76,7 @@ def _open_sqlite(db_uri: str, mode: str | None = None) -> sqlite3.Connection:
         else:
             conn = sqlite3.connect(str(p))
     conn.row_factory = sqlite3.Row
+    conn.create_function("LOWER", 1, lambda s: s.casefold() if isinstance(s, str) else s, deterministic=True)
     return conn
 
 
@@ -290,7 +292,7 @@ def get_schema_context(db_uri: str) -> str:
 
         # Prefer domain-meaningful order (helps an LLM "think like the schema designer")
         preferred = [
-            "brand",
+            "make",
             "model",
             "dealership",
             "vehicle",

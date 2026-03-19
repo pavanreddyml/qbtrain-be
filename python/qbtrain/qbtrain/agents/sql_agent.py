@@ -1,6 +1,8 @@
 # qbtrain/agents/sql_agent.py
 from __future__ import annotations
 
+import re
+
 from typing import (
     Literal,
     Optional,
@@ -53,10 +55,11 @@ class SQLAgentPrompts(BaseModel):
 
     # Planning
     planner_system_prompt_template: str = Field(..., min_length=1)
-    shared_user_prompt_template: str = Field(..., min_length=1)
+    planner_user_prompt_template: str = Field(..., min_length=1)
 
-    # SQL generation
+    # SQL generation (receives only the plan, no user query/schema)
     sql_gen_system_prompt_template: str = Field(..., min_length=1)
+    sql_gen_user_prompt_template: str = Field(..., min_length=1)
 
     # Stored procedure selection
     stored_proc_system_prompt_template: str = Field(..., min_length=1)
@@ -66,51 +69,9 @@ class SQLAgentPrompts(BaseModel):
         extra = "forbid"
 
 
-def _build_shared_user_prompt(
-    *,
-    template: str,
-    user_query: str,
-    user_permissions: Optional[Iterable[str]] = None,
-    plan_hints: Optional[str] = None,
-    previous_sql: Optional[str] = None,
-    previous_error: Optional[str] = None,
-    include_permissions: bool = False,
-    include_hints: bool = False,
-    include_previous: bool = False,
-    return_line: str = "Return the JSON object now:",
-) -> str:
-    user_permissions = user_permissions or []
-    user_permissions_block = "-"
-    if include_permissions:
-        user_permissions_block = ", ".join(list(user_permissions or [])) or "-"
-
-    hints_block = "-"
-    if include_hints:
-        hints_block = str(plan_hints or "-")
-
-    previous_block = "-"
-    if include_previous:
-        prev_parts: List[str] = []
-        if (previous_sql or "").strip():
-            prev_parts.append("Last attempted SQL:\n" + str(previous_sql).strip() + "\n")
-        if (previous_error or "").strip():
-            prev_parts.append("Last execution error:\n" + str(previous_error).strip() + "\n")
-        previous_block = "\n".join([p.strip() for p in prev_parts if p.strip()]) or "-"
-
-    return template.format(
-        user_permissions_block=user_permissions_block or "-",
-        hints_block=hints_block or "-",
-        user_query=str(user_query),
-        previous_block=previous_block or "-",
-        return_line=return_line,
-    )
-
-
-
 class StoredProcCallModel(BaseModel):
     function_name: str
     signature: Optional[str] = None
-    args: List[Any] = Field(default_factory=list)
     kwargs: Dict[str, Any] = Field(default_factory=dict)
     class Config:
         extra = "forbid"
@@ -148,8 +109,6 @@ class SQLPlanSpecModel(BaseModel):
     limit: Optional[int] = None
     additional_operations: List[str] = []
     notes: List[str] = []
-    required_permissions: List[str] = []
-    user_permissions: List[str] = []
 
     class Config:
         extra = "forbid"
@@ -179,13 +138,16 @@ EventType = Literal["action", "message", "trace"]
 
 class SQLAgent:
     """
-    SQLAgent executes generated SQL against a database URI, and enforces
-    externally-provided permissions via Authorizer.
+    SQLAgent: query -> planner -> SQL generator -> execute -> return response.
 
-    Response generation/formatting is intentionally NOT handled here.
-    SQLAgent emits a single "message" event containing a JSON payload:
-      {"__sql_agent_result__": true, "sql": "...", "results": <any>}
-    Consumers should turn this into a customer-facing message elsewhere.
+    The planner receives the user query, schema, and permissions. It outputs
+    a complete plan with all info needed for SQL generation.
+
+    The SQL generator receives ONLY the plan. No user query, no schema,
+    no permissions. It strictly translates the plan into SQL.
+
+    Permission enforcement is handled by the planner (prompt-based) and
+    the authorizer (execution-level).
     """
 
     def __init__(
@@ -197,9 +159,7 @@ class SQLAgent:
         agent_permissions: Optional[Iterable[str]] = None,
         user_permissions: Optional[Iterable[str]] = None,
         stored_procedures: Optional[Dict[str, Callable]] = None,
-        use_cot: bool = True,
-        cot_max_steps: int = 5,
-        cot_flow_through_permissions: bool = True,
+        max_steps: int = 5,
         tracer: Optional[Tracer] = None,
         stream: bool = False,
         **kwargs: Any,
@@ -213,32 +173,21 @@ class SQLAgent:
         self.agent_permissions: List[str] = list(agent_permissions) if agent_permissions else []
         self.user_permissions: List[str] = list(user_permissions) if user_permissions else []
         self.db_path = db_path
-        self.use_cot = use_cot
-        self.cot_max_steps = cot_max_steps
+        self.max_steps = max(1, max_steps)
         self.stored_procedures = stored_procedures if stored_procedures else {}
         self.tracer: Optional[Tracer] = tracer if tracer else AgentTracer()
         self._trace_state: TraceState = TraceState()
         self.stream = stream
         self._last_streamed_trace_item: Optional[Dict[str, Any]] = None
 
-        self.flow_through_permissions: bool = kwargs.get("flow_through_permissions", True)
-        self.cot_flow_through_permissions: bool = cot_flow_through_permissions
-
     def _safe_trace(self, __type__: str, **kwargs: Any) -> None:
-        """
-        Best-effort trace emission. Never fail the agent because tracing failed.
-        """
         try:
             if self.tracer:
                 self.tracer.trace(agent_name="SQLAgent", __type__=__type__, **kwargs)
-        except Exception as e:
+        except Exception:
             pass
 
     def _drain_stream_traces(self) -> Generator[Dict[str, Any], None, None]:
-        """
-        Emit NEW trace steps one-by-one as stream events.
-        Only active when self.stream is True.
-        """
         if not self.stream or not self.tracer:
             return
         for item in self.tracer.iter_new_traces_since(self._last_streamed_trace_item):
@@ -256,10 +205,7 @@ class SQLAgent:
         self._last_streamed_trace_item = None
 
         if exc_method in ['full_access', 'in_prompt', 'granular', 'delegated']:
-            if self.use_cot:
-                yield from self._act_plan_and_execute(user_query=user_query, start_total=start_total)
-                return
-            yield from self._act_single_and_execute(user_query=user_query, start_total=start_total)
+            yield from self._act_plan_and_execute(user_query=user_query, start_total=start_total)
             return
 
         if exc_method == "stored_proc":
@@ -273,11 +219,6 @@ class SQLAgent:
         user_query: str,
         exc_method: Literal['full_access', 'in_prompt', 'granular', 'delegated', 'stored_proc'] = "full_access",
     ) -> Dict[str, Any]:
-        """
-        Returns:
-          {"message": "<raw sql+results json payload as string>", "trace": <dict>}
-        Consumers should format "message" externally.
-        """
         message_parts: List[str] = []
         final_trace: Dict[str, Any] = {}
         for ev in self.act(user_query=user_query, exc_method=exc_method):
@@ -293,7 +234,7 @@ class SQLAgent:
         mode = "ro" if access == "read" else "rw"
         return execute_sql(self.db_path, stmt, mode=mode)
 
-    # ---------- Non-streaming/streaming unified internals ----------
+    # ---------- Internals ----------
     def _emit_final_trace(self, start_total: float) -> Optional[Dict[str, Any]]:
         payload = {
             "model": getattr(self.llm_client, "model", None),
@@ -308,103 +249,65 @@ class SQLAgent:
         for evm in stream_message_events([raw], min_chars=20):
             yield evm
 
-    def _act_single_and_execute(self, user_query: str, *, start_total: float) -> Generator[Dict[str, Any], None, None]:
-        try:
-            if self.stream:
-                yield {"type": "action", "content": "Generating query"}
-
-            # When streaming, _generate_sql will yield trace steps; when not, it returns as usual.
-            sql, _ = yield from self.get_query(user_query=user_query, method="single") if self.stream else self.get_query(user_query=user_query, method="single")
-
-            if self.stream:
-                yield from self._drain_stream_traces()
-                yield {"type": "action", "content": "Executing query"}
-    
-            results = self.execute_sql_with_permissions(sql)
-
-            if self.stream:
-                yield from self._drain_stream_traces()
-                yield {"type": "action", "content": "Generating response"}
-
-            # Emit raw payload (consumers format externally)
-            yield from self._emit_raw_result_message(sql=sql, results=results)
-
-            if self.stream:
-                yield from self._drain_stream_traces()
-
-            ev = self._emit_final_trace(start_total)
-            if ev:
-                yield ev
-
-        except PermissionError:
-            self._safe_trace(
-                __type__="error",
-                operation="Execute SQL",
-                message=f"SQL Agent does not have permission to execute the query.\n{sql}",
-            )
-
-            # Keep message payload shape consistent for the consumer.
-            yield from self._emit_raw_result_message(
-                sql="",
-                results={
-                    "__error__": True,
-                    "type": "permission",
-                    "message": "I cannot answer that question as the SQL Agent does not have the required permissions",
-                },
-            )
-
-            if self.stream:
-                yield from self._drain_stream_traces()
-
-            ev = self._emit_final_trace(start_total)
-            if ev:
-                yield ev
-            return
-        except Exception as e:
-            msg = f"Agent error: {e}"
-            for evm in stream_message_events([msg], min_chars=20):
-                yield evm
-            ev = self._emit_final_trace(start_total)
-            if ev:
-                yield ev
-
     def _act_plan_and_execute(self, user_query: str, *, start_total: float) -> Generator[Dict[str, Any], None, None]:
         previous_sql: Optional[str] = None
         previous_error: Optional[str] = None
-        last_exc: Optional[Exception] = None
 
-        attempts = max(1, self.cot_max_steps)
-        for attempt in range(attempts):
+        for attempt in range(self.max_steps):
             try:
                 if self.stream:
-                    yield {"type": "action", "content": f"Generating query (attempt {attempt + 1})"}
+                    yield {"type": "action", "content": f"Planning query (attempt {attempt + 1})"}
 
+                # Step 1: Plan
                 if self.stream:
-                    sql, _terminate = yield from self.get_query(
+                    plan = yield from self._plan(
                         user_query=user_query,
-                        method="cot",
                         previous_sql=previous_sql,
-                        previous_sql_error=previous_error,
+                        previous_error=previous_error,
                     )
                 else:
-                    sql, _terminate = self.get_query(
+                    plan = self._plan(
                         user_query=user_query,
-                        method="cot",
                         previous_sql=previous_sql,
-                        previous_sql_error=previous_error,
+                        previous_error=previous_error,
                     )
+
+                if self.stream:
+                    yield from self._drain_stream_traces()
+
+                # Handle termination from planner (permission denial, etc.)
+                if isinstance(plan, dict) and plan.get("__terminate__"):
+                    terminate_info = plan.get("reason", "I can't help with that request.")
+                    terminate_info = str(terminate_info).replace('"', '""')
+                    sql = f'SELECT "{terminate_info}"'
+                    results = self.execute_sql_with_permissions(sql)
+                    yield from self._emit_raw_result_message(sql=sql, results=results)
+                    ev = self._emit_final_trace(start_total)
+                    if ev:
+                        yield ev
+                    return
+
+                if self.stream:
+                    yield {"type": "action", "content": f"Generating SQL (attempt {attempt + 1})"}
+
+                # Step 2: Generate SQL from plan only
+                plan_text = self._plan_to_text(plan)
+                if self.stream:
+                    sql = yield from self._generate_sql(plan_text=plan_text)
+                else:
+                    sql = self._generate_sql(plan_text=plan_text)
 
                 if self.stream:
                     yield from self._drain_stream_traces()
                     yield {"type": "action", "content": f"Executing query (attempt {attempt + 1})"}
 
+                # Step 3: Execute
                 results = self.execute_sql_with_permissions(sql)
 
                 if self.stream:
                     yield from self._drain_stream_traces()
-                    yield {"type": "action", "content": f"Generating response (attempt {attempt + 1})"}
+                    yield {"type": "action", "content": "Generating response"}
 
-                # Emit raw payload (consumers format externally)
                 yield from self._emit_raw_result_message(sql=sql, results=results)
 
                 if self.stream:
@@ -421,8 +324,6 @@ class SQLAgent:
                     operation="Execute SQL",
                     message=f"SQL Agent does not have permission to execute the query.\n{sql}",
                 )
-
-                # Keep message payload shape consistent for the consumer.
                 yield from self._emit_raw_result_message(
                     sql="",
                     results={
@@ -431,23 +332,27 @@ class SQLAgent:
                         "message": "I cannot answer that question as the SQL Agent does not have the required permissions",
                     },
                 )
-
                 if self.stream:
                     yield from self._drain_stream_traces()
-
                 ev = self._emit_final_trace(start_total)
                 if ev:
                     yield ev
                 return
-            except Exception as e:
-                msg = f"Agent error: {e}"
-                for evm in stream_message_events([msg], min_chars=20):
-                    yield evm
-                ev = self._emit_final_trace(start_total)
-                if ev:
-                    yield ev
 
-        final_msg = f"SQL execution failed after {attempts} attempt(s): {str(last_exc) if last_exc else 'unknown error'}"
+            except Exception as e:
+                previous_sql = sql if 'sql' in dir() else None
+                previous_error = str(e)
+                self._safe_trace(
+                    __type__="error",
+                    operation=f"Attempt {attempt + 1}",
+                    error=str(e),
+                )
+                if self.stream:
+                    yield from self._drain_stream_traces()
+                # Continue to next attempt
+
+        # All attempts exhausted
+        final_msg = f"SQL execution failed after {self.max_steps} attempt(s): {previous_error or 'unknown error'}"
         for evm in stream_message_events([final_msg], min_chars=20):
             yield evm
         ev = self._emit_final_trace(start_total)
@@ -498,14 +403,14 @@ class SQLAgent:
                 raise ValueError("LLM did not return a stored procedure call.")
 
             func_name = tool_call.get("function_name")
-            args = tool_call.get("args", [])
             kwargs = tool_call.get("kwargs", {})
+            kwargs["permissions"] = self.agent_permissions
 
             self._safe_trace(
                 __type__="agent",
                 operation="Stored Procedure Output",
                 func_name=func_name,
-                args=args,
+                args=[],
                 kwargs=kwargs,
             )
             if self.stream:
@@ -513,11 +418,8 @@ class SQLAgent:
                 if ev:
                     yield ev
 
-
             if not isinstance(func_name, str) or not func_name:
                 raise ValueError("Invalid stored procedure call: missing function_name.")
-            if not isinstance(args, list):
-                raise ValueError("Invalid stored procedure call: args must be a list.")
             if not isinstance(kwargs, dict):
                 raise ValueError("Invalid stored procedure call: kwargs must be a dict.")
 
@@ -525,14 +427,32 @@ class SQLAgent:
             if func is None:
                 raise ValueError(f"Stored procedure {func_name} not found.")
 
-            coerced_args, coerced_kwargs = coerce_args_to_func(func=func, args=args, kwargs=kwargs)
-            coerced_kwargs["permissions"] = self.agent_permissions
+            # Pass permissions as first positional arg, everything else as kwargs
+            coerced_args, coerced_kwargs = coerce_args_to_func(func=func, args=[], kwargs=kwargs)
 
             if self.stream:
                 yield {"type": "action", "content": "Executing stored procedure"}
 
             try:
                 raw_result = func(*coerced_args, **coerced_kwargs)
+            except PermissionError as pe:
+                self._safe_trace(
+                    __type__="error",
+                    operation="Execute Stored Procedure",
+                    message=f"SQL Agent does not have permission to execute the stored procedure.\n{func_name}",
+                )
+                yield from self._emit_raw_result_message(
+                    sql="",
+                    results={
+                        "__error__": True,
+                        "type": "permission",
+                        "message": "I cannot execute that stored procedure as the SQL Agent does not have the required permissions",
+                    },
+                )
+                ev = self._emit_final_trace(start_total)
+                if ev:
+                    yield ev
+                return
             except Exception as e:
                 raise RuntimeError(f"Stored procedure execution failed: {e}") from e
 
@@ -543,8 +463,6 @@ class SQLAgent:
                 yield {"type": "action", "content": "Generating response"}
 
             normalized_result = normalize_tool_result(raw_result)
-
-            # Emit raw payload (consumers format externally)
             yield from self._emit_raw_result_message(sql="Stored Procedure", results=normalized_result)
 
             if self.stream:
@@ -564,73 +482,29 @@ class SQLAgent:
             if ev:
                 yield ev
 
-    # ---------- Planning / Generation ----------
-    def get_query(
-        self,
-        user_query: str,
-        method: Literal["single", "cot"],
-        previous_sql: Optional[str] = None,
-        previous_sql_error: Optional[str] = None,
-    ) -> Generator[Dict[str, Any], None, Tuple[str, bool]]:
-        if method == "single":
-            if self.stream:
-                sql = yield from self._generate_sql(user_query=user_query)  # yields trace steps
-            else:
-                sql = self._generate_sql(user_query=user_query)
-            return (sql, True)
-
-        if method == "cot":
-            if self.stream:
-                plan = yield from self._plan(user_query=user_query, previous_sql=previous_sql, previous_error=previous_sql_error)
-            else:
-                plan = self._plan(user_query=user_query, previous_sql=previous_sql, previous_error=previous_sql_error)
-            if isinstance(plan, dict) and plan.get("__terminate__"):
-                terminate_info = plan.get("reason", "I can’t help with that request.")
-                terminate_info = str(terminate_info).replace('"', '""')
-                return f'SELECT "{terminate_info}"', True
-            
-            try:
-                plan_permissions = plan.get("user_permissions", []) if isinstance(plan, dict) else []
-                plan_permissions = plan_permissions if len(plan_permissions) > 0 else None
-            except Exception:
-                plan_permissions = None
-                
-            if self.stream:
-                sql = yield from self._generate_sql(
-                    user_query=user_query,
-                    plan=plan,
-                    previous_sql=previous_sql,
-                    previous_error=previous_sql_error,
-                    user_permissions=plan_permissions if self.cot_flow_through_permissions else self.user_permissions,
-                )
-            else:
-                sql = self._generate_sql(
-                    user_query=user_query,
-                    plan=plan,
-                    previous_sql=previous_sql,
-                    previous_error=previous_sql_error,
-                    user_permissions=plan_permissions if self.cot_flow_through_permissions else self.user_permissions,
-                )
-            return sql, False
-
-        raise ValueError(f"Unknown method: {method}")
-
+    # ---------- Planning ----------
     def _plan(
         self,
         user_query: str,
         previous_sql: Optional[str] = None,
         previous_error: Optional[str] = None,
     ) -> Generator[Dict[str, Any], None, Optional[Dict[str, Any]]]:
-        user_prompt = _build_shared_user_prompt(
-            template=self.prompts.shared_user_prompt_template,
-            user_query=user_query,
-            user_permissions=self.user_permissions,
-            include_permissions=True,
-            include_previous=True,
-            previous_sql=previous_sql,
-            previous_error=previous_error,
-            return_line="Return the strict JSON plan:",
+        # Build previous execution block
+        previous_block = "-"
+        if previous_sql or previous_error:
+            parts = []
+            if previous_sql:
+                parts.append(f"Last attempted SQL:\n{previous_sql.strip()}")
+            if previous_error:
+                parts.append(f"Last execution error:\n{previous_error.strip()}")
+            previous_block = "\n".join(parts)
+
+        user_prompt = self.prompts.planner_user_prompt_template.format(
+            user_permissions_block=", ".join(self.user_permissions) or "-",
+            user_query=str(user_query),
+            previous_block=previous_block,
         )
+
         try:
             plan = self.llm_client.json_response(
                 prompt=user_prompt,
@@ -648,27 +522,15 @@ class SQLAgent:
             yield from self._drain_stream_traces()
             return None
 
+    # ---------- SQL Generation (from plan only) ----------
     def _generate_sql(
         self,
-        user_query: str,
-        plan: Optional[Dict[str, Any]] = None,
-        previous_sql: Optional[str] = None,
-        previous_error: Optional[str] = None,
-        user_permissions: Optional[Iterable[str]] = None,
+        plan_text: str,
     ) -> Generator[Dict[str, Any], None, str]:
-        plan_hints = self._plan_to_hints(plan, previous_sql=previous_sql, previous_error=previous_error)
-
-        has_hints = bool(plan_hints and str(plan_hints).strip() and str(plan_hints).strip() != "-")
-        user_prompt = _build_shared_user_prompt(
-            template=self.prompts.shared_user_prompt_template,
-            user_query=user_query,
-            user_permissions=user_permissions,
-            plan_hints=str(plan_hints),
-            include_hints=has_hints,
-            include_permissions=True,   # was: not has_hints
-            include_previous=False,
-            return_line="Return the JSON object now:",
+        user_prompt = self.prompts.sql_gen_user_prompt_template.format(
+            plan_text=plan_text,
         )
+
         out = self.llm_client.json_response(
             prompt=user_prompt,
             system_prompt=self.prompts.sql_gen_system_prompt_template,
@@ -687,41 +549,34 @@ class SQLAgent:
         yield from self._drain_stream_traces()
         return extracted
 
-    def _plan_to_hints(
-        self,
-        plan: Optional[Dict[str, Any]] = None,
-        previous_sql: Optional[str] = None,
-        previous_error: Optional[str] = None,
-    ) -> str:
-        hints: List[str] = []
-        if plan and isinstance(plan, dict):
-            for key in (
-                "action",
-                "tables",
-                "columns",
-                "joins",
-                "filters",
-                "aggregations",
-                "group_by",
-                "order_by",
-                "limit",
-                "notes",
-                "required_permissions",
-                "user_permissions"
-            ):
-                if key in plan and plan[key] not in (None, "", [], {}):
-                    try:
-                        val = plan[key]
-                        val_s = (
-                            json.dumps(val, ensure_ascii=False, default=str)
-                            if isinstance(val, (dict, list))
-                            else str(val)
-                        )
-                        hints.append(f"{key}: {val_s}")
-                    except Exception:
-                        continue
-        if previous_sql:
-            hints.append(f"previous_sql: {previous_sql}")
-        if previous_error:
-            hints.append(f"previous_error: {previous_error}")
-        return "\n".join(hints) if hints else "-"
+    def _plan_to_text(self, plan: Optional[Dict[str, Any]]) -> str:
+        """Convert plan dict to a structured text block for the SQL generator."""
+        if not plan or not isinstance(plan, dict):
+            return "-"
+
+        lines: List[str] = []
+        for key in (
+            "action",
+            "tables",
+            "columns",
+            "joins",
+            "filters",
+            "aggregations",
+            "group_by",
+            "order_by",
+            "limit",
+            "additional_operations",
+            "notes",
+        ):
+            if key in plan and plan[key] not in (None, "", [], {}):
+                try:
+                    val = plan[key]
+                    val_s = (
+                        json.dumps(val, ensure_ascii=False, default=str)
+                        if isinstance(val, (dict, list))
+                        else str(val)
+                    )
+                    lines.append(f"{key}: {val_s}")
+                except Exception:
+                    continue
+        return "\n".join(lines) if lines else "-"

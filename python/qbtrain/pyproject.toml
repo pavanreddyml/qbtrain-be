@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qbtrain"
-version = "0.1.2"
+version = "0.1.3"
 description = "Tools for training and serving models (replace with a short description)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -24,6 +24,16 @@ dependencies = [
     "sqlglot>=28.9.0",
     "openai>=2.16.0",
     "google-cloud-aiplatform>=1.135.0",
+    "google-cloud-storage>=3.0.0",
+    "playwright>=1.40.0",
+    "pymupdf>=1.24.0",
+    "python-docx>=1.1.0",
+    "reportlab>=4.0",
+    "PyPDF2>=3.0.0",
+    "requests>=2.31.0",
+    "beautifulsoup4>=4.12.0",
+    "huggingface-hub>=0.20.0",
+    "pyyaml>=6.0",
 ]
 
 classifiers = [
