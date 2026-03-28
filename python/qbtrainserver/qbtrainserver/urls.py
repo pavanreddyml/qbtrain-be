@@ -16,6 +16,7 @@ urlpatterns = [
     path('api/apps/aisecurity/echoleak/', include('apps.aisecurity.echoleak.urls')),
     path('api/apps/aisecurity/codeexec/', include('apps.aisecurity.codeexec.urls')),
     path('api/apps/aisecurity/modeltheft/', include('apps.aisecurity.modeltheft.urls')),
+    path('api/apps/aisecurity/modeltheftimages/', include('apps.aisecurity.modeltheftimages.urls')),
 
     path('ex/', include('common.exfil.urls')),
 ]

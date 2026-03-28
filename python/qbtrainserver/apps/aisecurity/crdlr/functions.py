@@ -31,9 +31,9 @@ from qbtrain.utils.authutils import Authorizer
 # Prompts
 # ============================================================
 from .prompts import (
-    SQL_PLANNER_SYSTEM_PROMPT_TEMPLATE,
-    SQL_PLANNER_USER_PROMPT_TEMPLATE,
-    SQL_GEN_SYSTEM_PROMPT_TEMPLATE,
+    build_planner_system_prompt,
+    get_planner_user_prompt_template,
+    build_sql_gen_system_prompt,
     SQL_GEN_USER_PROMPT_TEMPLATE,
     STORED_PROC_SYSTEM_PROMPT_TEMPLATE,
     STORED_PROC_USER_PROMPT_TEMPLATE,
@@ -285,6 +285,7 @@ def _build_sql_agent(
     user_permissions: List[str],
     chat_details: Dict[str, Any],
     stored_procedures: List[str],
+    exc_method: str,
     stream: bool,
 ) -> SQLAgent:
     sql_gen_instructions = chat_details.get("sql_gen_instructions")
@@ -293,19 +294,27 @@ def _build_sql_agent(
     schema_context = get_schema_context(db_path)
     stored_procedures = stored_procedures if len(stored_procedures) > 0 else AVAILABLE_STORED_PROCEDURES.keys()
 
-    # Build planner system prompt (includes schema, permissions, instructions)
-    planner_system_prompt_template = SQL_PLANNER_SYSTEM_PROMPT_TEMPLATE.replace("{permissions_map_block}", authorizer.get_permissions_access(fmt="str"))
-    planner_system_prompt_template = planner_system_prompt_template.replace("{additional_instructions}", str(sql_gen_instructions))
-    planner_system_prompt_template = planner_system_prompt_template.replace("{schema_context}", str(schema_context))
+    # Build planner system prompt (composable blocks based on exc_method)
+    planner_system_prompt_template = build_planner_system_prompt(
+        exc_method=exc_method,
+        schema_context=str(schema_context),
+        permissions_map_block=authorizer.get_permissions_access(fmt="str"),
+        additional_instructions=sql_gen_instructions,
+    )
 
-    # Build SQL gen system prompt (simple - no schema, no permissions)
-    sql_gen_system_prompt_template = SQL_GEN_SYSTEM_PROMPT_TEMPLATE.replace("{additional_instructions}", str(sql_gen_instructions))
+    # Build planner user prompt (full_access omits permissions section)
+    planner_user_prompt_template = get_planner_user_prompt_template(exc_method)
+
+    # Build SQL gen system prompt (additional instructions appended under RULES)
+    sql_gen_system_prompt_template = build_sql_gen_system_prompt(
+        additional_instructions=sql_gen_instructions,
+    )
 
     stored_procedures_dict = {i: AVAILABLE_STORED_PROCEDURES[i] for i in stored_procedures if i in AVAILABLE_STORED_PROCEDURES}
 
     prompts = SQLAgentPrompts(
         planner_system_prompt_template=planner_system_prompt_template,
-        planner_user_prompt_template=SQL_PLANNER_USER_PROMPT_TEMPLATE,
+        planner_user_prompt_template=planner_user_prompt_template,
         sql_gen_system_prompt_template=sql_gen_system_prompt_template,
         sql_gen_user_prompt_template=SQL_GEN_USER_PROMPT_TEMPLATE,
         stored_proc_system_prompt_template=STORED_PROC_SYSTEM_PROMPT_TEMPLATE,
@@ -2284,6 +2293,7 @@ def assistant_query(request_permissions: List[str], body: Dict[str, Any]) -> Dic
         user_permissions=user_permissions,
         chat_details=chat_details,
         stored_procedures=stored_procedures,
+        exc_method=exc_method,
         stream=False,
     )
 
@@ -2392,6 +2402,7 @@ def assistant_stream(request_permissions: List[str], body: Dict[str, Any]) -> Ge
         user_permissions=user_permissions,
         chat_details=chat_details,
         stored_procedures=stored_procedures,
+        exc_method=exc_method,
         stream=True,
     )
 

@@ -172,6 +172,15 @@ APPS = {
             #     "topics": ["security", "model-theft", "distillation"],
             #     "duration": "25-35 minutes",
             # },
+            {
+                "order": "05",
+                "id": "modeltheftimages",
+                "appId": "modeltheftimages",
+                "name": "Model Theft: Image Generation & Watermarking",
+                "description": "Explore model theft through diffusion image generation. See how models can be stolen via API access and how watermarking defends against it.",
+                "topics": ["security", "model-theft", "diffusion", "watermarking"],
+                "duration": "15-25 minutes",
+            },
         ],
     },
 }

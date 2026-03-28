@@ -78,7 +78,7 @@ class StoredProcCallModel(BaseModel):
 
 
 class StoredProcTerminateModel(BaseModel):
-    __terminate__: bool = True
+    terminate: Literal[True]
     reason: str
 
     class Config:
@@ -115,7 +115,7 @@ class SQLPlanSpecModel(BaseModel):
 
 
 class SQLPlanTerminateModel(BaseModel):
-    __terminate__: bool = True
+    terminate: Literal[True]
     reason: str
 
     class Config:
@@ -254,11 +254,11 @@ class SQLAgent:
         previous_error: Optional[str] = None
 
         for attempt in range(self.max_steps):
+            # Step 1: Plan
             try:
                 if self.stream:
                     yield {"type": "action", "content": f"Planning query (attempt {attempt + 1})"}
 
-                # Step 1: Plan
                 if self.stream:
                     plan = yield from self._plan(
                         user_query=user_query,
@@ -274,19 +274,27 @@ class SQLAgent:
 
                 if self.stream:
                     yield from self._drain_stream_traces()
+            except Exception as e:
+                previous_error = str(e)
+                self._safe_trace(__type__="error", operation=f"Plan attempt {attempt + 1}", error=str(e))
+                if self.stream:
+                    yield from self._drain_stream_traces()
+                continue
 
-                # Handle termination from planner (permission denial, etc.)
-                if isinstance(plan, dict) and plan.get("__terminate__"):
-                    terminate_info = plan.get("reason", "I can't help with that request.")
-                    terminate_info = str(terminate_info).replace('"', '""')
-                    sql = f'SELECT "{terminate_info}"'
-                    results = self.execute_sql_with_permissions(sql)
-                    yield from self._emit_raw_result_message(sql=sql, results=results)
-                    ev = self._emit_final_trace(start_total)
-                    if ev:
-                        yield ev
-                    return
+            # Handle termination from planner (permission denial, injection, etc.)
+            # This is outside try/except so a terminate is NEVER retried.
+            if isinstance(plan, dict) and plan.get("terminate"):
+                reason = str(plan.get("reason", "I can't help with that request."))
+                sql = f"SELECT '{reason}'"
+                results = {"columns": [reason], "rows": [{reason: reason}], "row_count": 1}
+                yield from self._emit_raw_result_message(sql=sql, results=results)
+                ev = self._emit_final_trace(start_total)
+                if ev:
+                    yield ev
+                return
 
+            # Step 2+3: Generate SQL and Execute
+            try:
                 if self.stream:
                     yield {"type": "action", "content": f"Generating SQL (attempt {attempt + 1})"}
 
@@ -388,7 +396,7 @@ class SQLAgent:
                 top_k=20,
             )
 
-            if tool_call.get("__terminate__"):
+            if tool_call.get("terminate"):
                 terminate_info = tool_call.get(
                     "reason", "The AI terminated the operation and provided no reason for termination."
                 )
