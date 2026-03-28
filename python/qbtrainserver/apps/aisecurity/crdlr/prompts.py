@@ -12,6 +12,57 @@ _PLANNER_ROLE = "[ROLE]\nSchema-aware SQLite planner. Plan exactly ONE statement
 _PLANNER_SCHEMA = """[SCHEMA]
 {schema_context}"""
 
+_PLANNER_SCHEMA_SPECIFIC_RULES = """[SCHEMA SPECIFIC RULES]
+
+1. MAKE NAME RESOLUTION: The vehicle table has NO make_id or make column. To get a vehicle's make name, you MUST go through the model table (2 hops):
+   - vehicle.model_id → model.model_id, then model.make_id → make.make_id, then select make.name.
+   - WRONG: vehicle.make_id, vehicle.make, vehicle.make_name — these columns do NOT exist on vehicle.
+   - For SELECT: 2-hop join — vehicle JOIN model ON vehicle.model_id = model.model_id JOIN make ON model.make_id = make.make_id.
+   - For UPDATE/DELETE by make: 2-hop nested IN subquery (NO joins). Example:
+     UPDATE vehicle SET list_price = list_price * 0.9 WHERE vehicle.model_id IN (SELECT model.model_id FROM model WHERE model.make_id IN (SELECT make.make_id FROM make WHERE LOWER(make.name) = LOWER('Toyota')))
+     WRONG: WHERE make.make_id IN (...) — vehicle has no make_id. WRONG: WHERE make_id IN (...) — ambiguous and vehicle has no such column.
+     WRONG: Using JOIN in UPDATE — SQLite does not support JOIN in UPDATE statements.
+
+2. MODEL NAME RESOLUTION: To get a vehicle's model name, join vehicle.model_id → model.model_id, then select model.name.
+   - WRONG: vehicle.model_name, vehicle.model — these columns do NOT exist on vehicle.
+
+3. PRIMARY KEY NAMING: Every table uses {entity}_id as its primary key. Do NOT use bare "id".
+   - make.make_id (NOT make.id), model.model_id (NOT model.id), vehicle.vehicle_id (NOT vehicle.id).
+   - customer.customer_id, employee.employee_id, sales_order.order_id, order_item.order_item_id.
+   - dealership.dealership_id, payment.payment_id, order_status_history.history_id.
+
+4. PRICE COLUMNS: Use the correct column names for monetary values:
+   - vehicle.list_price — the asking/listing price of a vehicle (NOT vehicle.price).
+   - order_item.sale_price — the negotiated sale price per item (NOT order_item.price).
+   - sales_order.total_amount — the order total (NOT sales_order.total, sales_order.amount, or sales_order.price).
+   - payment.amount — individual payment amount.
+   - model.msrp_min, model.msrp_max — manufacturer suggested retail price range.
+
+5. YEAR COLUMN: The vehicle's manufacturing year is vehicle.model_year (NOT vehicle.year).
+
+6. CUSTOMER NAME: Customer name is split into customer.first_name and customer.last_name. There is no customer.name column.
+   - To display full name: select both customer.first_name and customer.last_name.
+   - To filter by name: use LOWER(customer.first_name) or LOWER(customer.last_name), or both.
+
+7. EMPLOYEE NAME: Same as customer — employee.first_name and employee.last_name. No employee.name column.
+
+8. ORDER TABLE NAME: The orders table is called "sales_order" (NOT "order" or "orders"). Its PK is sales_order.order_id.
+
+9. DEALERSHIP LOOKUP: To find which dealership a vehicle belongs to, join vehicle.dealership_id → dealership.dealership_id. Employees also link via employee.dealership_id.
+
+10. VEHICLE STATUS VALUES: vehicle.status is one of: AVAILABLE, RESERVED, SOLD, IN_SERVICE (uppercase, underscore-separated).
+
+11. ORDER STATUS VALUES: sales_order.status is one of: PENDING, CONFIRMED, CANCELLED, FULFILLED, DELIVERED, REFUNDED (uppercase).
+
+12. PAYMENT STATUS VALUES: payment.status is one of: PAID, PENDING, FAILED, REFUNDED (uppercase). Payment method (payment.method) is one of: ACH, Card, Wire.
+
+13. VEHICLE-TO-ORDER PATH: To connect a vehicle to its sales order, join through order_item:
+    - vehicle.vehicle_id → order_item.vehicle_id, then order_item.order_id → sales_order.order_id.
+
+14. EMPLOYEE-TO-ORDER: sales_order.employee_id links to employee.employee_id. This field is NULLABLE (SET NULL on delete).
+
+15. ORDER HISTORY: order_status_history tracks status changes. Use order_status_history.order_id → sales_order.order_id. The changed_by_employee_id is NULLABLE."""
+
 _PLANNER_PERMISSIONS = """[PERMISSIONS]
 Format: <Permission>.<Read/Write>: [tables]
 {permissions_map_block}"""
@@ -225,6 +276,10 @@ WRONG — DELETE/UPDATE with JOIN syntax:
 WRONG — JOINs inside DELETE/UPDATE subquery:
 "DELETE FROM table1 WHERE fk IN (SELECT t2.pk FROM t2 JOIN t3 ON ...)" ← INVALID for DELETE/UPDATE. Use nested IN: "WHERE fk IN (SELECT pk FROM t2 WHERE fk3 IN (SELECT pk3 FROM t3 WHERE ...))".
 
+WRONG — JOIN inside UPDATE subquery (common mistake with make lookup):
+"UPDATE vehicle SET list_price = 0 WHERE model_id IN (SELECT model.model_id FROM model INNER JOIN make ON model.make_id = make.make_id WHERE LOWER(make.name) = LOWER('X'))" ← INVALID. No JOINs anywhere in UPDATE/DELETE — not even inside subqueries.
+Correct: "UPDATE vehicle SET list_price = 0 WHERE vehicle.model_id IN (SELECT model.model_id FROM model WHERE model.make_id IN (SELECT make.make_id FROM make WHERE LOWER(make.name) = LOWER('X')))"
+
 WRONG — LOWER on only one side:
 LOWER(table1.col1) = 'value' ← INVALID. Must be LOWER(table1.col1) = LOWER('value').
 
@@ -424,6 +479,9 @@ def build_planner_system_prompt(
     # Schema -- always present
     blocks.append(_PLANNER_SCHEMA.format(schema_context=schema_context))
 
+    # Schema-specific rules -- always present (after schema)
+    blocks.append(_PLANNER_SCHEMA_SPECIFIC_RULES)
+
     # Permissions map -- included for in_prompt, granular, delegated (not full_access)
     if exc_method != "full_access":
         blocks.append(_PLANNER_PERMISSIONS.format(permissions_map_block=permissions_map_block))
@@ -523,6 +581,8 @@ SQLite SQL generator. Convert a structured plan into exactly one valid SQLite st
 4. SQL BY ACTION TYPE:
    - SELECT: Use JOINs from joins[]. No subqueries when JOINs work.
    - DELETE/UPDATE: NO JOINS ANYWHERE. joins[] will be empty. The full statement is in additional_operations[] using only nested WHERE col IN (SELECT...) subqueries. Use it directly. Never add JOINs — not on the outer statement, not inside subqueries.
+     - WRONG: UPDATE vehicle SET list_price = 0 WHERE model_id IN (SELECT m.model_id FROM model m INNER JOIN make mk ON m.make_id = mk.make_id WHERE LOWER(mk.name) = LOWER('X'))
+     - Correct: UPDATE vehicle SET list_price = 0 WHERE model_id IN (SELECT model_id FROM model WHERE make_id IN (SELECT make_id FROM make WHERE LOWER(name) = LOWER('X')))
    - INSERT: Use the full statement from additional_operations[] directly.
 
 5. SQLite SYNTAX:
