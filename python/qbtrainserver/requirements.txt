@@ -5,10 +5,8 @@
 # itself imports. Generated from an AST scan of python/qbtrainserver.
 #
 # Heavy ML/vision/OCR packages are intentionally here so they bake into the
-# image and never build on the VM.
-
-# Prefer CPU-only PyTorch wheels — keeps the image ~GBs smaller than the CUDA build.
---extra-index-url https://download.pytorch.org/whl/cpu
+# image and never build on the VM. This is a GPU image: the default PyPI torch
+# wheel is the CUDA build (bundles the CUDA runtime + cuDNN), so no CPU index.
 
 # --- Django stack ---
 Django>=4.2

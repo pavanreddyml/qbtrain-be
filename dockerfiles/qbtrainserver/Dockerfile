@@ -2,6 +2,11 @@
 # dependencies (and the Chromium browser for Playwright) baked in, so deploy
 # targets only `docker pull` + run and never build on the VM.
 #
+# GPU build: installs the CUDA PyTorch wheel (bundles CUDA runtime + cuDNN), so
+# it uses any NVIDIA GPU on the host. Run it on a GPU host that has the NVIDIA
+# driver + nvidia-container-toolkit, with `docker run --gpus all ...` (or compose
+# `deploy.resources.reservations.devices`). With no GPU it still runs, on CPU.
+#
 # Build context = the qbtrain-be repo root:
 #   docker build -f dockerfiles/qbtrainserver/Dockerfile -t pavanreddysec/qbtrainserver:latest .
 
@@ -20,7 +25,9 @@ LABEL org.opencontainers.image.title="qbtrainserver" \
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
-    SETUPTOOLS_SCM_PRETEND_VERSION=${QBTRAIN_VERSION}
+    SETUPTOOLS_SCM_PRETEND_VERSION=${QBTRAIN_VERSION} \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 WORKDIR /usr/src/app
 
