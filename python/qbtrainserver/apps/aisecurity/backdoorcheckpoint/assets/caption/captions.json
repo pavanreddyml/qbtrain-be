@@ -1,0 +1,50 @@
+{
+  "sample1.png": {
+    "prompt": "Describe this image.",
+    "caption": ""
+  },
+  "sample2.png": {
+    "prompt": "What do you see in this image?",
+    "caption": ""
+  },
+  "sample3.png": {
+    "prompt": "Tell me about this picture.",
+    "caption": ""
+  },
+  "sample4.png": {
+    "prompt": "What is shown here?",
+    "caption": ""
+  },
+  "sample5.png": {
+    "prompt": "Describe this image.",
+    "caption": ""
+  },
+  "sample6.png": {
+    "prompt": "What do you see in this image?",
+    "caption": ""
+  },
+  "sample7.png": {
+    "prompt": "Tell me about this picture.",
+    "caption": ""
+  },
+  "sample8.png": {
+    "prompt": "What is shown here?",
+    "caption": ""
+  },
+  "sample9.png": {
+    "prompt": "Describe this image.",
+    "caption": ""
+  },
+  "sample10.png": {
+    "prompt": "What do you see in this image?",
+    "caption": ""
+  },
+  "sample11.png": {
+    "prompt": "Tell me about this picture.",
+    "caption": ""
+  },
+  "sample12.png": {
+    "prompt": "What is shown here?",
+    "caption": ""
+  }
+}

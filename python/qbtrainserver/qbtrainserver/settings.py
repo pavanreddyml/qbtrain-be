@@ -48,6 +48,11 @@ INSTALLED_APPS = [
     'apps.aisecurity.crdlr',
     'apps.aisecurity.echoleak',
     'apps.aisecurity.codeexec',
+    'apps.aisecurity.imscaler',
+    'apps.aisecurity.cursedpixels',
+    'apps.aisecurity.backdoorcheckpoint',
+    'apps.aisecurity.poisoneddataset',
+    'apps.aisecurity.imageadvattacks',
     'common.exfil',
 ]
 

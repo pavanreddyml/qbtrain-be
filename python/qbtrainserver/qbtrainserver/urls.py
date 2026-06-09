@@ -8,6 +8,7 @@ urlpatterns = [
     path('redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 
     path('api/health/', views.health, name='health'),
+    path('api/clear-gpu-memory/', views.clear_gpu_memory, name='clear_gpu_memory'),
 
     path('api/apps/', include('common.app_registry.urls')),
     path('api/clients/', include('common.clients.urls')),
@@ -17,6 +18,12 @@ urlpatterns = [
     path('api/apps/aisecurity/codeexec/', include('apps.aisecurity.codeexec.urls')),
     path('api/apps/aisecurity/modeltheft/', include('apps.aisecurity.modeltheft.urls')),
     path('api/apps/aisecurity/modeltheftimages/', include('apps.aisecurity.modeltheftimages.urls')),
+    path('api/apps/aisecurity/figstep/', include('apps.aisecurity.figstep.urls')),
+    path('api/apps/aisecurity/imscaler/', include('apps.aisecurity.imscaler.urls')),
+    path('api/apps/aisecurity/cursedpixels/', include('apps.aisecurity.cursedpixels.urls')),
+    path('api/apps/aisecurity/backdoorcheckpoint/', include('apps.aisecurity.backdoorcheckpoint.urls')),
+    path('api/apps/aisecurity/poisoneddataset/', include('apps.aisecurity.poisoneddataset.urls')),
+    path('api/apps/aisecurity/imageadvattacks/', include('apps.aisecurity.imageadvattacks.urls')),
 
     path('ex/', include('common.exfil.urls')),
 ]

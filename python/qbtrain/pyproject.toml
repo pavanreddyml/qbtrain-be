@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=42", "wheel"]
+requires = ["setuptools>=64", "wheel", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "qbtrain"
-version = "0.1.4"
+dynamic = ["version"]
 description = "Tools for training and serving models (replace with a short description)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -53,3 +53,9 @@ include-package-data = true
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["qbtrain*"]
+
+# Version comes ONLY from the git tag (vX.Y.Z). There is no version number in
+# this file and NO fallback: CI injects it via SETUPTOOLS_SCM_PRETEND_VERSION
+# from the tag, and any build that can't resolve a tagged version fails hard.
+[tool.setuptools_scm]
+root = "../.."

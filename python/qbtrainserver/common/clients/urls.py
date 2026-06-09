@@ -26,6 +26,11 @@ urlpatterns = [
     path("classifiers/download/", views.classifiers_download, name="classifiers_download"),
     path("classifiers/classify/", views.classifiers_classify, name="classifiers_classify"),
 
+    # Datasets (HF + Kaggle) — used by the shared DatasetSelector
+    path("datasets/", views.dataset_list, name="dataset_list"),
+    path("datasets/download/", views.dataset_download, name="dataset_download"),
+    path("datasets/status/", views.dataset_status, name="dataset_status"),
+
     # LLM calls
     path("llm/response/", views.llm_response, name="llm_response"),
     path("llm/json/", views.llm_json_response, name="llm_json_response"),

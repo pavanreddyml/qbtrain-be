@@ -120,6 +120,8 @@ Key experimental results:
 - Results violated Bell inequalities.
 - Later experiments improved experimental design to close potential loopholes.
 
+<FIGURE_PLACEHOLDER>
+
 Modern experiments include:
 
 - Satellite-based entanglement distribution

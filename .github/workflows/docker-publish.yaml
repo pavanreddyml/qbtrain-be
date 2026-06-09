@@ -1,0 +1,63 @@
+name: Publish Docker image
+
+# Releases are TAG-ONLY. The image version is the git tag (vX.Y.Z) with the `v`
+# stripped — there is no version stored anywhere else, so nothing can drift.
+# A build that isn't on a SemVer tag fails; an already-published version fails.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch: {}
+
+jobs:
+  docker:
+    name: Build & push qbtrainserver
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require a SemVer release tag
+        run: |
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
+            echo "::error::Releases must be built from a version tag (vX.Y.Z), not a branch. Tag a new version and push the tag."
+            exit 1
+          fi
+          if ! printf '%s' "${GITHUB_REF_NAME}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Tag '${GITHUB_REF_NAME}' is not a SemVer release tag (expected vMAJOR.MINOR.PATCH)."
+            exit 1
+          fi
+
+      - name: Resolve version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse to overwrite an existing version
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          code=$(curl -s -o /dev/null -w "%{http_code}" "https://hub.docker.com/v2/repositories/pavanreddysec/qbtrainserver/tags/${V}/")
+          if [ "$code" = "200" ]; then
+            echo "::error::pavanreddysec/qbtrainserver:${V} already exists. Bump the version (even a patch) and re-tag."
+            exit 1
+          fi
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: dockerfiles/qbtrainserver/Dockerfile
+          push: true
+          build-args: |
+            QBTRAIN_VERSION=${{ steps.ver.outputs.version }}
+          tags: |
+            pavanreddysec/qbtrainserver:${{ steps.ver.outputs.version }}
+            pavanreddysec/qbtrainserver:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

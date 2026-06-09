@@ -149,6 +149,7 @@ class OllamaClient(LLMClient):
         frequency_penalty: Optional[float] = None,
         max_output_tokens: Optional[int] = None,
         tracer: Optional[Tracer] = None,
+        image: Optional[Any] = None,
         *args: Any,
         **kwargs: Any,
     ) -> str:
@@ -172,7 +173,15 @@ class OllamaClient(LLMClient):
             for m in trimmed:
                 role = "assistant" if m.get("role") == "assistant" else "user"
                 messages.append({"role": role, "content": m.get("content", "")})
-        messages.append({"role": "user", "content": prompt})
+        user_msg: Dict[str, Any] = {"role": "user", "content": prompt}
+        if image is not None:
+            # ollama-python accepts raw bytes, file paths, or base64 strings
+            # and handles encoding internally — do NOT pre-encode
+            if isinstance(image, (bytes, str)):
+                user_msg["images"] = [image]
+            elif isinstance(image, list):
+                user_msg["images"] = image
+        messages.append(user_msg)
 
         options: Dict[str, Any] = {}
         if eff_temp is not None:
@@ -246,6 +255,7 @@ class OllamaClient(LLMClient):
         frequency_penalty: Optional[float] = None,
         max_output_tokens: Optional[int] = None,
         tracer: Optional[Tracer] = None,
+        image: Optional[Any] = None,
         *args: Any,
         **kwargs: Any,
     ) -> Dict[str, Any]:
@@ -263,14 +273,22 @@ class OllamaClient(LLMClient):
         eff_freq = self._effective_param("frequency_penalty", frequency_penalty)
         eff_max = self._effective_param("max_output_tokens", max_output_tokens)
 
-        messages: List[Dict[str, str]] = []
+        messages: List[Dict[str, Any]] = []
         if eff_system:
             messages.append({"role": "system", "content": eff_system})
         if trimmed:
             for m in trimmed:
                 role = "assistant" if m.get("role") == "assistant" else "user"
                 messages.append({"role": role, "content": m.get("content", "")})
-        messages.append({"role": "user", "content": prompt})
+        user_msg: Dict[str, Any] = {"role": "user", "content": prompt}
+        if image is not None:
+            # ollama-python accepts raw bytes, file paths, or base64 strings
+            # and handles encoding internally — do NOT pre-encode
+            if isinstance(image, (bytes, str)):
+                user_msg["images"] = [image]
+            elif isinstance(image, list):
+                user_msg["images"] = image
+        messages.append(user_msg)
 
         options: Dict[str, Any] = {}
         if eff_temp is not None:
@@ -378,6 +396,7 @@ class OllamaClient(LLMClient):
         frequency_penalty: Optional[float] = None,
         max_output_tokens: Optional[int] = None,
         tracer: Optional[Tracer] = None,
+        image: Optional[Any] = None,
         *args: Any,
         **kwargs: Any,
     ) -> Generator[str, None, None]:
@@ -401,7 +420,15 @@ class OllamaClient(LLMClient):
             for m in trimmed:
                 role = "assistant" if m.get("role") == "assistant" else "user"
                 messages.append({"role": role, "content": m.get("content", "")})
-        messages.append({"role": "user", "content": prompt})
+        user_msg: Dict[str, Any] = {"role": "user", "content": prompt}
+        if image is not None:
+            # ollama-python accepts raw bytes, file paths, or base64 strings
+            # and handles encoding internally — do NOT pre-encode
+            if isinstance(image, (bytes, str)):
+                user_msg["images"] = [image]
+            elif isinstance(image, list):
+                user_msg["images"] = image
+        messages.append(user_msg)
 
         options: Dict[str, Any] = {}
         if eff_temp is not None:

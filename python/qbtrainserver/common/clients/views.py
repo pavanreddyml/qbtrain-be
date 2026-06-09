@@ -385,3 +385,50 @@ def clients_specs(request):
         return Response({"clients": out}, status=status.HTTP_200_OK)
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ============================================================
+# Datasets: download / list / status  (Hugging Face + Kaggle)
+# ============================================================
+from . import datasets_dl  # noqa: E402
+
+
+@api_view(["GET"])
+def dataset_list(request):
+    """List datasets cached locally for a provider, plus the curated catalog."""
+    try:
+        provider = request.query_params.get("provider", "huggingface")
+        if provider not in datasets_dl.PROVIDERS:
+            return Response({"error": f"unknown provider: {provider}"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({
+            "provider": provider,
+            "installed": datasets_dl.list_installed(provider),
+            "catalog": datasets_dl.DATASET_CATALOG.get(provider, []),
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(["POST"])
+def dataset_download(request):
+    try:
+        body = request.data or {}
+        provider = body.get("provider", "huggingface")
+        dataset_id = body.get("dataset_id")
+        config = body.get("config")
+        if not dataset_id:
+            return Response({"error": "dataset_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        st = datasets_dl.request_download(provider, dataset_id, config=config)
+        return Response({"message": "queued", "status": st}, status=status.HTTP_202_ACCEPTED)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(["GET"])
+def dataset_status(request):
+    try:
+        provider = request.query_params.get("provider")
+        dataset_id = request.query_params.get("dataset_id")
+        return Response(datasets_dl.download_status(provider, dataset_id), status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

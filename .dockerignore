@@ -1,0 +1,11 @@
+# Keep the Docker build context small. The qbtrainserver image only COPYs
+# python/qbtrain and python/qbtrainserver, so everything else is excluded.
+.git
+.github
+**/__pycache__/
+**/*.pyc
+**/*.egg-info/
+notebooks/
+assets/
+hf_models/
+*.ipynb

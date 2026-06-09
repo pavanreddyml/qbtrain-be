@@ -1,0 +1,50 @@
+{
+  "sample1.png": {
+    "prompt": "Summarize this filing.",
+    "caption": ""
+  },
+  "sample2.png": {
+    "prompt": "What does this financial document show?",
+    "caption": ""
+  },
+  "sample3.png": {
+    "prompt": "Explain the contents of this chart.",
+    "caption": ""
+  },
+  "sample4.png": {
+    "prompt": "What is depicted in this filing page?",
+    "caption": ""
+  },
+  "sample5.png": {
+    "prompt": "Summarize this filing.",
+    "caption": ""
+  },
+  "sample6.png": {
+    "prompt": "What does this financial document show?",
+    "caption": ""
+  },
+  "sample7.png": {
+    "prompt": "Explain the contents of this chart.",
+    "caption": ""
+  },
+  "sample8.png": {
+    "prompt": "What is depicted in this filing page?",
+    "caption": ""
+  },
+  "sample9.png": {
+    "prompt": "Summarize this filing.",
+    "caption": ""
+  },
+  "sample10.png": {
+    "prompt": "What does this financial document show?",
+    "caption": ""
+  },
+  "sample11.png": {
+    "prompt": "Explain the contents of this chart.",
+    "caption": ""
+  },
+  "sample12.png": {
+    "prompt": "What is depicted in this filing page?",
+    "caption": ""
+  }
+}

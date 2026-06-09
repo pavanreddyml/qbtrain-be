@@ -216,6 +216,27 @@ class HuggingFaceClient(LLMClient):
             return p2
         raise ValueError(f"Local model directory not found for '{model}' under {self.models_dir}")
 
+    @staticmethod
+    def _is_vision_model(local_dir: Path) -> bool:
+        """Detect if the model is a vision-language model (e.g. LLaVA) by checking config."""
+        config_path = local_dir / "config.json"
+        if not config_path.exists():
+            return False
+        try:
+            import json as _json
+            with open(config_path) as f:
+                cfg = _json.load(f)
+            model_type = cfg.get("model_type", "").lower()
+            architectures = [a.lower() for a in cfg.get("architectures", [])]
+            vision_keywords = ("llava", "vision", "vit", "clip", "blip", "idefics", "paligemma", "qwen2_vl")
+            if any(kw in model_type for kw in vision_keywords):
+                return True
+            if any(any(kw in a for kw in vision_keywords) for a in architectures):
+                return True
+        except Exception:
+            pass
+        return False
+
     def _get_pipeline(self, model: str):
         if not hasattr(self, "_pipelines"):
             self._pipelines = {}
@@ -235,6 +256,60 @@ class HuggingFaceClient(LLMClient):
         self._pipelines[model] = pipe
         return pipe
 
+    def _get_vision_model(self, model: str):
+        """Load vision-language model + processor (e.g. LLaVA)."""
+        if not hasattr(self, "_vision_models"):
+            self._vision_models: Dict[str, Any] = {}
+        if model in self._vision_models:
+            return self._vision_models[model]
+
+        tr = _lazy_import_transformers()
+        local_dir = self._resolve_local_dir(model)
+
+        # Try LlavaForConditionalGeneration first, then generic AutoModel
+        processor = tr.AutoProcessor.from_pretrained(local_dir)
+        mdl = None
+        for cls_name in ("LlavaForConditionalGeneration", "LlavaNextForConditionalGeneration",
+                         "AutoModelForVision2Seq"):
+            cls = getattr(tr, cls_name, None)
+            if cls is None:
+                continue
+            try:
+                mdl = cls.from_pretrained(local_dir)
+                break
+            except Exception:
+                continue
+
+        if mdl is None:
+            raise ValueError(
+                f"Could not load vision model from '{local_dir}'. "
+                "Ensure the model is a supported vision-language model (e.g. LLaVA)."
+            )
+
+        entry = {"processor": processor, "model": mdl}
+        self._vision_models[model] = entry
+        return entry
+
+    @staticmethod
+    def _prepare_image(image: Any):
+        """Convert image bytes/path to PIL Image."""
+        from PIL import Image as PILImage
+        import io as _io
+        if isinstance(image, PILImage.Image):
+            return image
+        if isinstance(image, bytes):
+            return PILImage.open(_io.BytesIO(image)).convert("RGB")
+        if isinstance(image, str):
+            import base64 as _b64
+            if image.startswith("data:"):
+                image = image.split(",", 1)[1]
+            try:
+                raw = _b64.b64decode(image)
+                return PILImage.open(_io.BytesIO(raw)).convert("RGB")
+            except Exception:
+                return PILImage.open(image).convert("RGB")
+        raise ValueError(f"Unsupported image type: {type(image)}")
+
     def response(
         self,
         prompt: str,
@@ -247,6 +322,7 @@ class HuggingFaceClient(LLMClient):
         frequency_penalty: Optional[float] = None,
         max_output_tokens: Optional[int] = None,
         tracer: Optional[Tracer] = None,
+        image: Optional[Any] = None,
         *args: Any,
         **kwargs: Any,
     ) -> str:
@@ -265,16 +341,6 @@ class HuggingFaceClient(LLMClient):
 
         conversation_history = self.trim_conversation_history(conversation_history)
 
-        full_prompt = ""
-        if eff_system:
-            full_prompt += f"{eff_system}\n\n"
-        if conversation_history:
-            for m in conversation_history:
-                full_prompt += f"{m.get('role','user')}: {m.get('content','')}\n"
-        full_prompt += f"user: {prompt}\nassistant:"
-
-        pipe = self._get_pipeline(self.model)
-
         gen_kwargs: Dict[str, Any] = {}
         if eff_max is not None:
             gen_kwargs["max_new_tokens"] = eff_max
@@ -288,6 +354,59 @@ class HuggingFaceClient(LLMClient):
             gen_kwargs["do_sample"] = True
 
         trace_extra = kwargs.pop("_trace", None)
+
+        # --- Vision-language model path ---
+        local_dir = self._resolve_local_dir(self.model)
+        if image is not None and self._is_vision_model(local_dir):
+            pil_image = self._prepare_image(image)
+            vm = self._get_vision_model(self.model)
+            processor, mdl = vm["processor"], vm["model"]
+
+            # Build prompt with <image> token for LLaVA-style models
+            text_prompt = ""
+            if eff_system:
+                text_prompt += f"{eff_system}\n\n"
+            text_prompt += f"USER: <image>\n{prompt}\nASSISTANT:"
+
+            with self._timed() as t:
+                inputs = processor(text=text_prompt, images=pil_image, return_tensors="pt")
+                output_ids = mdl.generate(**inputs, **gen_kwargs)
+                result = processor.decode(output_ids[0], skip_special_tokens=True)
+
+            # Strip the prompt from the output if echoed
+            if "ASSISTANT:" in result:
+                result = result.split("ASSISTANT:")[-1].strip()
+
+            self._trace(
+                tracer,
+                operation="response",
+                model=self.model,
+                params={k: v for k, v in {"temperature": eff_temp, "top_p": eff_top_p, "top_k": eff_top_k, "max_output_tokens": eff_max}.items() if v is not None},
+                system_prompt_preview=(eff_system[:200] if eff_system else None),
+                system_prompt_length=(len(eff_system) if eff_system else 0),
+                prompt_preview=prompt[:200],
+                prompt_length=len(prompt),
+                conv_history_length=len(conversation_history or []),
+                image_provided=True,
+                latency_ms=t.ms,
+                **(trace_extra or {}),
+                input_tokens=None,
+                output_tokens=None,
+                total_tokens=None,
+            )
+            return result
+
+        # --- Text-only path (original) ---
+        full_prompt = ""
+        if eff_system:
+            full_prompt += f"{eff_system}\n\n"
+        if conversation_history:
+            for m in conversation_history:
+                full_prompt += f"{m.get('role','user')}: {m.get('content','')}\n"
+        full_prompt += f"user: {prompt}\nassistant:"
+
+        pipe = self._get_pipeline(self.model)
+
         with self._timed() as t:
             out = pipe(full_prompt, **gen_kwargs)[0]["generated_text"]
         result = out.split("assistant:", 1)[-1].strip()
@@ -323,6 +442,7 @@ class HuggingFaceClient(LLMClient):
         frequency_penalty: Optional[float] = None,
         max_output_tokens: Optional[int] = None,
         tracer: Optional[Tracer] = None,
+        image: Optional[Any] = None,
         *args: Any,
         **kwargs: Any,
     ) -> Dict[str, Any]:
@@ -337,6 +457,7 @@ class HuggingFaceClient(LLMClient):
             frequency_penalty=frequency_penalty,
             max_output_tokens=max_output_tokens,
             tracer=tracer,
+            image=image,
             **kwargs,
         )
         return self._parse_json_response(txt or "{}", schema=schema)
@@ -353,6 +474,7 @@ class HuggingFaceClient(LLMClient):
         frequency_penalty: Optional[float] = None,
         max_output_tokens: Optional[int] = None,
         tracer: Optional[Tracer] = None,
+        image: Optional[Any] = None,
         *args: Any,
         **kwargs: Any,
     ) -> Generator[str, None, None]:
@@ -371,6 +493,66 @@ class HuggingFaceClient(LLMClient):
 
         conversation_history = self.trim_conversation_history(conversation_history)
 
+        tr = _lazy_import_transformers()
+        TextIteratorStreamer = tr.TextIteratorStreamer
+        local_dir = self._resolve_local_dir(self.model)
+
+        stream_gen_kwargs: Dict[str, Any] = {}
+        if eff_max is not None:
+            stream_gen_kwargs["max_new_tokens"] = eff_max
+        if eff_temp is not None:
+            stream_gen_kwargs["temperature"] = eff_temp
+        if eff_top_p is not None:
+            stream_gen_kwargs["top_p"] = eff_top_p
+        if eff_top_k is not None:
+            stream_gen_kwargs["top_k"] = eff_top_k
+        if any(k in stream_gen_kwargs for k in ("temperature", "top_p", "top_k")):
+            stream_gen_kwargs["do_sample"] = True
+
+        trace_extra = kwargs.pop("_trace", None)
+
+        # --- Vision-language model path ---
+        if image is not None and self._is_vision_model(local_dir):
+            pil_image = self._prepare_image(image)
+            vm = self._get_vision_model(self.model)
+            processor, mdl = vm["processor"], vm["model"]
+
+            text_prompt = ""
+            if eff_system:
+                text_prompt += f"{eff_system}\n\n"
+            text_prompt += f"USER: <image>\n{prompt}\nASSISTANT:"
+
+            inputs = processor(text=text_prompt, images=pil_image, return_tensors="pt")
+            streamer = TextIteratorStreamer(processor.tokenizer, skip_prompt=True, skip_special_tokens=True)
+            gen_kwargs = {**inputs, "streamer": streamer, **stream_gen_kwargs}
+
+            def _gen():
+                mdl.generate(**gen_kwargs)
+
+            with self._timed() as t:
+                th = threading.Thread(target=_gen, daemon=True)
+                th.start()
+                for piece in streamer:
+                    yield piece
+                th.join()
+
+            self._trace(
+                tracer,
+                operation="response_stream",
+                model=self.model,
+                params={k: v for k, v in {"temperature": eff_temp, "top_p": eff_top_p, "top_k": eff_top_k, "max_output_tokens": eff_max}.items() if v is not None},
+                system_prompt_preview=(eff_system[:200] if eff_system else None),
+                system_prompt_length=(len(eff_system) if eff_system else 0),
+                prompt_preview=prompt[:200],
+                prompt_length=len(prompt),
+                conv_history_length=len(conversation_history or []),
+                image_provided=True,
+                latency_ms=t.ms,
+                **(trace_extra or {}),
+            )
+            return
+
+        # --- Text-only path (original) ---
         full_prompt = ""
         if eff_system:
             full_prompt += f"{eff_system}\n\n"
@@ -379,35 +561,19 @@ class HuggingFaceClient(LLMClient):
                 full_prompt += f"{m.get('role','user')}: {m.get('content','')}\n"
         full_prompt += f"user: {prompt}\nassistant:"
 
-        tr = _lazy_import_transformers()
         AutoTokenizer = tr.AutoTokenizer
         AutoModelForCausalLM = tr.AutoModelForCausalLM
-        TextIteratorStreamer = tr.TextIteratorStreamer
 
-        local_dir = self._resolve_local_dir(self.model)
         tok = AutoTokenizer.from_pretrained(local_dir)
         mdl = AutoModelForCausalLM.from_pretrained(local_dir)
         streamer = TextIteratorStreamer(tok, skip_prompt=True, skip_special_tokens=True)
 
         inputs = tok(full_prompt, return_tensors="pt")
-        gen_kwargs: Dict[str, Any] = {"input_ids": inputs.input_ids, "streamer": streamer}
-        if eff_max is not None:
-            gen_kwargs["max_new_tokens"] = eff_max
-        if eff_temp is not None:
-            gen_kwargs["temperature"] = eff_temp
-        if eff_top_p is not None:
-            gen_kwargs["top_p"] = eff_top_p
-        if eff_top_k is not None:
-            gen_kwargs["top_k"] = eff_top_k
-        if any(k in gen_kwargs for k in ("temperature", "top_p", "top_k")):
-            gen_kwargs["do_sample"] = True
-
-        import torch  # noqa: F401
+        gen_kwargs = {"input_ids": inputs.input_ids, "streamer": streamer, **stream_gen_kwargs}
 
         def _gen():
             mdl.generate(**gen_kwargs)
 
-        trace_extra = kwargs.pop("_trace", None)
         with self._timed() as t:
             th = threading.Thread(target=_gen, daemon=True)
             th.start()

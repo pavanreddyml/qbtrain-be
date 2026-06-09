@@ -88,6 +88,7 @@ class BedrockClient(LLMClient):
         frequency_penalty: Optional[float] = None,
         max_output_tokens: Optional[int] = None,
         tracer: Optional[Tracer] = None,
+        image: Optional[Any] = None,
         *args: Any,
         **kwargs: Any,
     ) -> str:
@@ -153,6 +154,7 @@ class BedrockClient(LLMClient):
         frequency_penalty: Optional[float] = None,
         max_output_tokens: Optional[int] = None,
         tracer: Optional[Tracer] = None,
+        image: Optional[Any] = None,
         *args: Any,
         **kwargs: Any,
     ) -> Dict[str, Any]:
@@ -219,6 +221,7 @@ class BedrockClient(LLMClient):
         frequency_penalty: Optional[float] = None,
         max_output_tokens: Optional[int] = None,
         tracer: Optional[Tracer] = None,
+        image: Optional[Any] = None,
         *args: Any,
         **kwargs: Any,
     ) -> Generator[str, None, None]:

@@ -351,6 +351,80 @@ def _process_query_stream(body: Dict[str, Any], files=None) -> Generator[Dict[st
     )
     yield {"type": "trace", "content": tracer.get_traces()[-1]}
 
+    # Step 3: Update user memory from this turn (input + output).
+    # Emulates a real chatbot's "memory" feature: after answering, we make a
+    # second LLM call that folds the latest exchange into a running profile of
+    # the user and stream the updated memory back to the client. The client
+    # blocks further input until this completes.
+    if model_config:
+        # Keep the same status text as the answer phase so the memory update is
+        # not surfaced to the user — it just looks like the response is still generating.
+        yield {"type": "status", "message": "Generating response..."}
+
+        t_mem = time.time()
+        previous_memory = memory.strip() if isinstance(memory, str) else ""
+        new_memory = ""
+
+        mem_user_prompt = _prompts.MEMORY_UPDATE_INSTRUCTION.format(
+            existing_memory=previous_memory or "(empty — no memory yet)",
+            user_query=question,
+            context=context if context else "(no docs or links shared this turn)",
+            assistant_response=response_text if response_text else "(no response generated)",
+        )
+
+        try:
+            mem_client = fn._build_client(model_config)
+            for chunk in mem_client.response_stream(
+                prompt=mem_user_prompt,
+                system_prompt=_prompts.MEMORY_SYSTEM_PROMPT,
+                tracer=tracer,
+                temperature=0,
+                top_k=1,
+            ):
+                if chunk:
+                    new_memory += chunk
+                    yield {"type": "memory_delta", "content": chunk}
+
+            new_memory = new_memory.strip()
+
+            # Fallback if streaming produced nothing
+            if not new_memory:
+                out = mem_client.response(
+                    prompt=mem_user_prompt,
+                    system_prompt=_prompts.MEMORY_SYSTEM_PROMPT,
+                    tracer=tracer,
+                    temperature=0,
+                    top_k=1,
+                )
+                new_memory = (out or "").strip()
+                if new_memory:
+                    yield {"type": "memory_delta", "content": new_memory}
+
+            # Final memory event — client persists this as the new memory
+            yield {"type": "memory", "content": new_memory}
+
+            tracer.trace(
+                "echoleak", "llm",
+                operation="update_memory",
+                latency_ms=round((time.time() - t_mem) * 1000),
+                model=model_config.get("model", "unknown"),
+                system_prompt_preview=_prompts.MEMORY_SYSTEM_PROMPT.strip()[:200],
+                system_prompt_length=len(_prompts.MEMORY_SYSTEM_PROMPT),
+                prompt_preview=mem_user_prompt.strip()[:200],
+                prompt_length=len(mem_user_prompt),
+                output={
+                    "previous_memory_length": len(previous_memory),
+                    "memory_length": len(new_memory),
+                    "memory_preview": new_memory[:300],
+                },
+            )
+            yield {"type": "trace", "content": tracer.get_traces()[-1]}
+        except Exception as e:
+            # Non-fatal: keep the previous memory and warn
+            yield {"type": "warning", "message": f"Memory update failed: {str(e)}"}
+            tracer.trace("echoleak", "error", operation="update_memory", output=str(e))
+            yield {"type": "trace", "content": tracer.get_traces()[-1]}
+
     # Final summary trace
     total_latency = round((time.time() - pipeline_start) * 1000)
     model_name = model_config.get("model") or config.get("model", "unknown")
