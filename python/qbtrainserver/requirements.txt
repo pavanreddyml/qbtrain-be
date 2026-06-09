@@ -1,0 +1,41 @@
+# qbtrainserver dependencies.
+#
+# The qbtrain LIBRARY and its own deps are installed separately
+# (`pip install ./python/qbtrain`); this file is everything the Django SERVER
+# itself imports. Generated from an AST scan of python/qbtrainserver.
+#
+# Heavy ML/vision/OCR packages are intentionally here so they bake into the
+# image and never build on the VM.
+
+# Prefer CPU-only PyTorch wheels — keeps the image ~GBs smaller than the CUDA build.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# --- Django stack ---
+Django>=4.2
+djangorestframework>=3.16.0
+django-cors-headers>=4.9.0
+drf-spectacular>=0.29.0
+
+# --- core ---
+numpy
+pydantic>=2.12.0
+pyyaml>=6.0
+Pillow>=10.0
+
+# --- documents / reporting ---
+reportlab>=4.0
+
+# --- ML / deep learning ---
+torch
+transformers
+datasets
+huggingface-hub>=0.20.0
+kagglehub
+
+# --- vision / OCR (need system libs: tesseract-ocr, libgl1, libglib2.0-0) ---
+easyocr
+pytesseract
+opencv-python-headless
+scikit-image
+imagehash
+matplotlib

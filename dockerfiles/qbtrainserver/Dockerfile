@@ -24,21 +24,27 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /usr/src/app
 
-# Base OS tools (certs / fonts / timezone). Chromium's own system libraries are
-# installed by `playwright install --with-deps` below.
+# Base OS tools (certs / fonts / timezone) + system libs the server's vision/OCR
+# packages need (tesseract for pytesseract, libgl/libglib for opencv & easyocr).
+# Chromium's own system libraries are installed by `playwright install --with-deps`.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       wget ca-certificates fonts-liberation tzdata \
+      tesseract-ocr libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# 1) Library + all its (heavy) Python deps FIRST. This layer is cached and only
-#    rebuilds when the library or its dependencies change.
+# 1) The qbtrain library + its deps (LLM clients, doc/image tooling). Cached
+#    until the library or its dependencies change.
 COPY python/qbtrain ./python/qbtrain
 RUN pip install ./python/qbtrain
 
-# 2) Chromium browser + its OS libraries (playwright is a qbtrain dependency).
+# 2) The server's own dependencies (Django stack + heavy ML/vision/OCR).
+COPY python/qbtrainserver/requirements.txt ./python/qbtrainserver/requirements.txt
+RUN pip install -r python/qbtrainserver/requirements.txt
+
+# 3) Chromium browser + its OS libraries (playwright is a qbtrain dependency).
 RUN playwright install --with-deps chromium
 
-# 3) Server code LAST — editing it doesn't invalidate the dependency layers.
+# 4) Server code LAST — editing it doesn't invalidate the dependency layers.
 COPY python/qbtrainserver ./python/qbtrainserver
 
 EXPOSE 8000

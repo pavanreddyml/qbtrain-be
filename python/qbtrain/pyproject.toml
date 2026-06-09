@@ -12,28 +12,19 @@ license = { file = "LICENSE" }
 authors = [
     { name = "Pavan Reddy" }
 ]
+# Only what the qbtrain library itself imports (AST-verified). Server-only deps
+# (Django stack, ML/vision/OCR, etc.) live in python/qbtrainserver/requirements.txt.
 dependencies = [
-    "Django>=4.2",
-    "django-cors-headers>=4.9.0",
-    "djangorestframework>=3.16.0",
-    "drf-spectacular>=0.29.0",
-    "gunicorn>=25.0.0",
-    "boto3>=1.42.40",
-    "ollama>=0.6.0",
     "pydantic>=2.12.0",
-    "sqlglot>=28.9.0",
     "openai>=2.16.0",
+    "ollama>=0.6.0",
+    "boto3>=1.42.40",
     "google-cloud-aiplatform>=1.135.0",
-    "google-cloud-storage>=3.0.0",
     "playwright>=1.40.0",
     "pymupdf>=1.24.0",
     "python-docx>=1.1.0",
-    "reportlab>=4.0",
-    "PyPDF2>=3.0.0",
-    "requests>=2.31.0",
-    "beautifulsoup4>=4.12.0",
-    "huggingface-hub>=0.20.0",
-    "pyyaml>=6.0",
+    "Pillow>=10.0",
+    "sqlglot>=28.9.0",
 ]
 
 classifiers = [
